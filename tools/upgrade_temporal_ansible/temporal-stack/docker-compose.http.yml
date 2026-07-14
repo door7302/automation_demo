@@ -1,0 +1,17 @@
+name: temporal-stack-ansible
+
+# HTTP-only override: publishes the Temporal Web UI directly on port 8081.
+# No nginx, no TLS.
+#
+#   Browser --HTTP--> temporal-ui:8090 (published as 8081) --gRPC--> temporal:7233
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.http.yml up -d
+# Then open: http://localhost:8081
+
+services:
+  temporal-ui:
+    environment:
+      TEMPORAL_CORS_ORIGINS: http://localhost:8081
+    ports:
+      - "8081:8090"        # host 8081 -> UI container 8090

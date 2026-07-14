@@ -1,0 +1,28 @@
+{
+  "target_hosts": "rtme-mx-25",
+  "user": "regress",
+  "password": "CHANGE_ME",
+  "release_file": "junos-install-mx-x86-64-23.4R1.9.tgz",
+  "local_repo": "/var/tmp/images",
+  "re_target": "both",
+  "approval_timeout_minutes": 30,
+  "hosts": {
+    "rtme-mx-25": {
+      "device_name": "rtme-mx-25.englab.juniper.net",
+      "model": "mx480",
+      "software": "junos"
+    },
+    "rtme-ptx10001-36mr-10": {
+      "device_name": "rtme-ptx10001-36mr-10.englab.juniper.net",
+      "model": "ptx10008",
+      "software": "evo"
+    }
+  },
+  "group_vars": {
+    "overload_advertise_high_metrics": false,
+    "interface_whitelist": [],
+    "bgp_group_whitelist": [],
+    "ri_whitelist": []
+  },
+  "extra_vars": {}
+}

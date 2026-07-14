@@ -1,0 +1,9 @@
+# Auto-generated rollback state
+state/
+*.retry
+.mykey
+
+# Python / ansible
+__pycache__/
+*.pyc
+*.pyo

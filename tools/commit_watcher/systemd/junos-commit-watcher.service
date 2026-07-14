@@ -1,0 +1,45 @@
+[Unit]
+Description=Junos Commit Watcher (syslog -> MongoDB commit-diff archiver)
+Documentation=https://github.com/your-org/juniper_api
+After=network-online.target
+Wants=network-online.target
+# If MongoDB runs on this host via docker compose, start after Docker.
+After=docker.service
+
+[Service]
+Type=simple
+
+# --- Where the code lives --------------------------------------------------
+# Adjust these three paths to your deployment. WorkingDirectory is the repo
+# root so that relative paths (e.g. tools/config.yaml) resolve correctly.
+WorkingDirectory=/opt/juniper_api
+ExecStart=/opt/juniper_api/.venv/bin/python \
+    /opt/juniper_api/tools/syslog_commit_watcher.py \
+    --config /opt/juniper_api/tools/config.yaml
+
+# --- Run as an unprivileged, dedicated user --------------------------------
+# Create it once with:  sudo useradd --system --no-create-home --shell /usr/sbin/nologin junos-watcher
+User=junos-watcher
+Group=junos-watcher
+
+# Credentials / overrides can also be injected here instead of config.yaml.
+# EnvironmentFile is optional; "-" means "ignore if missing".
+EnvironmentFile=-/opt/juniper_api/tools/systemd/junos-commit-watcher.env
+
+# --- Reliability -----------------------------------------------------------
+Restart=on-failure
+RestartSec=5
+# Give in-flight NETCONF fetches a moment to finish on stop.
+TimeoutStopSec=30
+
+# --- Hardening -------------------------------------------------------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# The watcher only reads its config and writes to MongoDB over the network,
+# so it needs no writable paths on disk. Add ReadWritePaths=... if you point
+# logging at a file.
+
+[Install]
+WantedBy=multi-user.target

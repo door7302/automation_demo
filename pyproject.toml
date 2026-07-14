@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "juniper-api"
+version = "1.0.0"
+description = "High-level NETCONF management library for Juniper devices, built on Junos PyEZ."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "junos-eznc>=2.7.0",
+    "lxml>=4.6.0",
+]
+
+[tool.setuptools]
+packages = ["juniper_api"]

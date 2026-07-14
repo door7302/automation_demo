@@ -1,0 +1,10 @@
+# Temporal SDK (the worker + client)
+temporalio>=1.7
+
+# Ansible — the worker shells out to `ansible-playbook` to run the bundled
+# ansible/playbooks set. PyYAML (used to generate the inventory) ships as an
+# Ansible dependency.
+ansible-core>=2.16.6
+
+# The Junos playbooks use the juniper.device collection (PyEZ based). Install
+# it once with:  ansible-galaxy collection install -r ansible/requirements.yml

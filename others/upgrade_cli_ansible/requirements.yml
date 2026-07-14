@@ -1,0 +1,8 @@
+---
+# Official Juniper Networks Ansible collection (PyEZ based).
+# Install with:  ansible-galaxy collection install -r requirements.yml
+# Pinned to 1.0.7 (verified-good). Needs ansible-core >= 2.16.6 for the pyez
+# connection fix.
+collections:
+  - name: juniper.device
+    version: "==1.0.7"

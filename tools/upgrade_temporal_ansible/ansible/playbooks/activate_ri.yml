@@ -1,0 +1,71 @@
+---
+# ==========================================================================
+# activate_ri.yml
+# Re-activate ("activate routing-instances <name>") the routing-instances that
+# were deactivated by deactivate_ri.yml, then clear the state file.
+# ==========================================================================
+- name: Activate routing-instances
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    statefile: "{{ state_dir }}/{{ device_name }}/routing_instances.json"
+    lo0_statefile: "{{ state_dir }}/{{ device_name }}/routing_instances_lo0.json"
+  tasks:
+
+    - name: Read saved deactivated routing-instance list
+      ansible.builtin.stat:
+        path: "{{ statefile }}"
+      register: st
+      delegate_to: localhost
+
+    - name: Load saved routing-instances
+      ansible.builtin.set_fact:
+        saved_ri: "{{ (lookup('file', statefile) | from_json) if st.stat.exists else [] }}"
+
+    - name: Read saved deactivated loopback (lo0) unit list
+      ansible.builtin.stat:
+        path: "{{ lo0_statefile }}"
+      register: st_lo0
+      delegate_to: localhost
+
+    - name: Load saved loopback units
+      ansible.builtin.set_fact:
+        saved_lo0: "{{ (lookup('file', lo0_statefile) | from_json) if st_lo0.stat.exists else [] }}"
+
+    - name: Nothing to do
+      ansible.builtin.debug:
+        msg: "{{ device_name }} | no saved deactivated routing-instances"
+      when:
+        - saved_ri | length == 0
+        - saved_lo0 | length == 0
+
+    - name: Build the activation command set (routing-instances + their lo0 units)
+      ansible.builtin.set_fact:
+        act_lines: >-
+          {{ (saved_ri
+              | map('regex_replace', '^(.+)$', 'activate routing-instances \1') | list)
+             + (saved_lo0
+              | map('regex_replace', '^lo0\.(\d+)$', 'activate interfaces lo0 unit \1') | list) }}
+
+    - name: Re-activate the routing-instances (and their loopback units)
+      juniper.device.config:
+        load: set
+        lines: "{{ act_lines }}"
+        commit: true
+        comment: "Ansible activate_ri"
+      when: act_lines | length > 0
+
+    - name: Clear the routing-instance state file
+      ansible.builtin.file:
+        path: "{{ statefile }}"
+        state: absent
+      delegate_to: localhost
+      when: saved_ri | length > 0
+
+    - name: Clear the loopback-unit state file
+      ansible.builtin.file:
+        path: "{{ lo0_statefile }}"
+        state: absent
+      delegate_to: localhost
+      when: saved_lo0 | length > 0

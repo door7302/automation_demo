@@ -1,0 +1,72 @@
+---
+# ==========================================================================
+# deactivate_ri.yml
+# Deactivate ("deactivate routing-instances <name>") every routing-instance
+# that is currently active. Already-deactivated and whitelisted instances are
+# skipped. Deactivated instances are appended to a per-device state file.
+#
+#   ansible-playbook playbooks/deactivate_ri.yml \
+#       -e '{"ri_whitelist": ["mgmt_junos", "VRF-CORE"]}'
+# ==========================================================================
+- name: Deactivate routing-instances
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    statefile: "{{ state_dir }}/{{ device_name }}/routing_instances.json"
+  tasks:
+
+    - name: Retrieve committed configuration (set format)
+      juniper.device.config:
+        retrieve: committed
+        format: set
+        return_output: true
+      register: cfg
+
+    - name: Parse routing-instances
+      ansible.builtin.set_fact:
+        _all_ri: "{{ cfg.config | regex_findall('(?m)^set routing-instances (\\S+)') | unique }}"
+        _deact_ri: "{{ cfg.config | regex_findall('(?m)^deactivate routing-instances (\\S+)\\s*$') | unique }}"
+
+    - name: Compute routing-instances to deactivate
+      ansible.builtin.set_fact:
+        target_ri: >-
+          {{ _all_ri
+             | difference(_deact_ri)
+             | difference(ri_whitelist)
+             | list }}
+
+    - name: Show what will be deactivated
+      ansible.builtin.debug:
+        msg: "{{ device_name }} | routing-instances to deactivate: {{ target_ri }}"
+
+    - name: Deactivate the routing-instances
+      juniper.device.config:
+        load: set
+        lines: "{{ target_ri | map('regex_replace', '^(.+)$', 'deactivate routing-instances \\1') | list }}"
+        commit: true
+        comment: "Ansible deactivate_ri"
+      when: target_ri | length > 0
+
+    - name: Persist state (only when something was deactivated)
+      when: target_ri | length > 0
+      block:
+        - name: Ensure state directory exists
+          ansible.builtin.file:
+            path: "{{ statefile | dirname }}"
+            state: directory
+            mode: "0755"
+          delegate_to: localhost
+
+        - name: Read previously saved list (if any)
+          ansible.builtin.stat:
+            path: "{{ statefile }}"
+          register: st
+          delegate_to: localhost
+
+        - name: Merge and store the deactivated routing-instance list
+          ansible.builtin.copy:
+            content: "{{ ((lookup('file', statefile) | from_json) if st.stat.exists else []) | union(target_ri) | to_nice_json }}"
+            dest: "{{ statefile }}"
+            mode: "0644"
+          delegate_to: localhost

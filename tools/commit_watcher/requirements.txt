@@ -1,0 +1,11 @@
+# Runtime dependencies for the syslog commit watcher tool.
+# juniper_api itself is installed from the repository root (see README).
+motor>=3.3.0
+PyYAML>=6.0
+
+# gNMI on-change back-end (watcher.mode: gnmi | both)
+pygnmi>=0.8.13
+
+# Web UI (webapp.py)
+fastapi>=0.110.0
+uvicorn>=0.27.0

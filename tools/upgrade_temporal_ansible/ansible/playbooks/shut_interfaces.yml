@@ -1,0 +1,78 @@
+---
+# ==========================================================================
+# shut_interfaces.yml
+# Disable ("set interfaces <if> disable") every interface that is currently
+# admin-up, i.e. configured but NOT already disabled and NOT deactivated.
+# The list of interfaces we disable is appended to a per-device state file
+# so unshut_interfaces.yml can re-enable exactly those.
+#
+# Optional whitelist (interfaces to leave alone):
+#   ansible-playbook playbooks/shut_interfaces.yml \
+#       -e '{"interface_whitelist": ["ge-0/0/0", "lo0"]}'
+# ==========================================================================
+- name: Shutdown admin-up interfaces
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    statefile: "{{ state_dir }}/{{ device_name }}/shutdown_interfaces.json"
+  tasks:
+
+    - name: Retrieve committed configuration (set format)
+      juniper.device.config:
+        retrieve: committed
+        format: set
+        return_output: true
+      register: cfg
+
+    - name: Parse interface configuration
+      ansible.builtin.set_fact:
+        _all_if: "{{ cfg.config | regex_findall('(?m)^set interfaces (\\S+)') | unique }}"
+        _disabled_if: "{{ cfg.config | regex_findall('(?m)^set interfaces (\\S+) disable\\s*$') | unique }}"
+        _deact_if: "{{ cfg.config | regex_findall('(?m)^deactivate interfaces (\\S+)\\s*$') | unique }}"
+
+    - name: Compute admin-up interfaces to shut down
+      ansible.builtin.set_fact:
+        target_interfaces: >-
+          {{ _all_if
+             | difference(_disabled_if)
+             | difference(_deact_if)
+             | difference(interface_whitelist)
+             | reject('match', '^(interface-range|traceoptions|apply-groups)$')
+             | list }}
+
+    - name: Show what will be disabled
+      ansible.builtin.debug:
+        msg: "{{ device_name }} | interfaces to disable: {{ target_interfaces }}"
+
+    - name: Disable the interfaces
+      juniper.device.config:
+        load: set
+        lines: "{{ target_interfaces | map('regex_replace', '^(.+)$', 'set interfaces \\1 disable') | list }}"
+        commit: true
+        comment: "Ansible shut_interfaces"
+      when: target_interfaces | length > 0
+
+    # ----- persist state (merge with any previous run) --------------------
+    - name: Persist state (only when something was disabled)
+      when: target_interfaces | length > 0
+      block:
+        - name: Ensure state directory exists
+          ansible.builtin.file:
+            path: "{{ statefile | dirname }}"
+            state: directory
+            mode: "0755"
+          delegate_to: localhost
+
+        - name: Read previously saved list (if any)
+          ansible.builtin.stat:
+            path: "{{ statefile }}"
+          register: st
+          delegate_to: localhost
+
+        - name: Merge and store the shutdown interface list
+          ansible.builtin.copy:
+            content: "{{ ((lookup('file', statefile) | from_json) if st.stat.exists else []) | union(target_interfaces) | to_nice_json }}"
+            dest: "{{ statefile }}"
+            mode: "0644"
+          delegate_to: localhost

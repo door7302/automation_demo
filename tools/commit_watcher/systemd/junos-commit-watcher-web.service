@@ -1,0 +1,48 @@
+[Unit]
+Description=Junos Commit Watcher Web UI (browse commit diffs)
+Documentation=https://github.com/your-org/juniper_api
+After=network-online.target
+Wants=network-online.target
+# If MongoDB runs on this host via docker compose, start after Docker.
+After=docker.service
+# The UI reads what the watcher writes; start it after the watcher when both
+# run on the same host (ordering only; the UI works without it too).
+After=junos-commit-watcher.service
+
+[Service]
+Type=simple
+
+# --- Where the code lives --------------------------------------------------
+# Adjust these paths to your deployment. WorkingDirectory is the repo root so
+# that relative paths (e.g. static assets) resolve correctly.
+WorkingDirectory=/opt/juniper_api
+ExecStart=/opt/juniper_api/.venv/bin/python \
+    /opt/juniper_api/tools/commit_watcher/webapp.py \
+    --config /opt/juniper_api/tools/commit_watcher/config.yaml
+
+# --- Run as an unprivileged, dedicated user --------------------------------
+# Reuse the watcher's service account (create it once with:
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin junos-watcher )
+User=junos-watcher
+Group=junos-watcher
+
+# MongoDB URI and web/SSL settings can also be injected here instead of
+# config.yaml. EnvironmentFile is optional; "-" means "ignore if missing".
+EnvironmentFile=-/opt/juniper_api/tools/commit_watcher/systemd/junos-commit-watcher.env
+
+# --- Reliability -----------------------------------------------------------
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+# --- Hardening -------------------------------------------------------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# The web UI only reads its config/static files and talks to MongoDB over the
+# network, so it needs no writable paths on disk. If your TLS key lives outside
+# the working directory, no write access is required to read it.
+
+[Install]
+WantedBy=multi-user.target

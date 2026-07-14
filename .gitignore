@@ -1,0 +1,5 @@
+__pycache__/**
+juniper_api/__pycache__/**
+**/pkg/*.tgz
+mykey.txt
+docs/**

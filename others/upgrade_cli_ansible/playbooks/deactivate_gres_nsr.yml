@@ -1,0 +1,91 @@
+---
+# ==========================================================================
+# deactivate_gres_nsr.yml
+# Check the high-availability knobs listed in `gres_nsr_knobs`:
+#   - routing-options nonstop-routing            (NSR)
+#   - protocols layer2-control nonstop-bridging  (NSB)
+#   - chassis redundancy graceful-switchover     (GRES)
+# For every knob that is present AND still active, deactivate it
+# ("deactivate <knob>") and record it in a per-device state file.
+# Already-deactivated knobs are skipped.
+# ==========================================================================
+- name: Deactivate GRES / NSR / NSB
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    statefile: "{{ state_dir }}/{{ device_name }}/gres_nsr.json"
+    nsr_statefile: "{{ state_dir }}/{{ device_name }}/nonstop_routing.json"
+  tasks:
+
+    - name: Retrieve committed configuration (set format)
+      juniper.device.config:
+        retrieve: committed
+        format: set
+        return_output: true
+      register: cfg
+
+    - name: Record whether nonstop-routing is enabled (always)
+      block:
+        - name: Compute nonstop-routing enabled state
+          ansible.builtin.set_fact:
+            nonstop_routing_enabled: >-
+              {{ (cfg.config is search('(?m)^set routing-options nonstop-routing'))
+                 and not (cfg.config is search('(?m)^deactivate routing-options nonstop-routing')) }}
+
+        - name: Ensure state directory exists
+          ansible.builtin.file:
+            path: "{{ nsr_statefile | dirname }}"
+            state: directory
+            mode: "0755"
+          delegate_to: localhost
+
+        - name: Store nonstop-routing state
+          ansible.builtin.copy:
+            content: "{{ {'nonstop_routing_enabled': (nonstop_routing_enabled | bool)} | to_nice_json }}"
+            dest: "{{ nsr_statefile }}"
+            mode: "0644"
+          delegate_to: localhost
+
+    - name: Determine which knobs are present and active
+      ansible.builtin.set_fact:
+        knobs_to_deactivate: "{{ knobs_to_deactivate | default([]) + [item] }}"
+      loop: "{{ gres_nsr_knobs }}"
+      when:
+        - cfg.config is search('(?m)^set ' + (item | regex_escape))
+        - not (cfg.config is search('(?m)^deactivate ' + (item | regex_escape)))
+
+    - name: Show what will be deactivated
+      ansible.builtin.debug:
+        msg: "{{ device_name }} | HA knobs to deactivate: {{ knobs_to_deactivate | default([]) }}"
+
+    - name: Deactivate the knobs
+      juniper.device.config:
+        load: set
+        lines: "{{ (knobs_to_deactivate | default([])) | map('regex_replace', '^(.+)$', 'deactivate \\1') | list }}"
+        commit: true
+        comment: "Ansible deactivate_gres_nsr"
+      when: (knobs_to_deactivate | default([])) | length > 0
+
+    - name: Persist state (only when something was deactivated)
+      when: (knobs_to_deactivate | default([])) | length > 0
+      block:
+        - name: Ensure state directory exists
+          ansible.builtin.file:
+            path: "{{ statefile | dirname }}"
+            state: directory
+            mode: "0755"
+          delegate_to: localhost
+
+        - name: Read previously saved list (if any)
+          ansible.builtin.stat:
+            path: "{{ statefile }}"
+          register: st
+          delegate_to: localhost
+
+        - name: Merge and store the deactivated knob list
+          ansible.builtin.copy:
+            content: "{{ ((lookup('file', statefile) | from_json) if st.stat.exists else []) | union(knobs_to_deactivate | default([])) | to_nice_json }}"
+            dest: "{{ statefile }}"
+            mode: "0644"
+          delegate_to: localhost

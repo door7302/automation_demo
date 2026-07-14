@@ -1,0 +1,43 @@
+---
+# ==========================================================================
+# restore_isis_overload.yml
+# Remove the current "protocols isis overload" stanza and re-apply the
+# configuration that was saved by set_isis_overload.yml.
+# If the saved stanza was empty (no overload existed before), the overload
+# config is simply removed.
+# ==========================================================================
+- name: Restore ISIS overload
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    statefile: "{{ state_dir }}/{{ device_name }}/isis_overload.json"
+  tasks:
+
+    - name: Read saved overload configuration
+      ansible.builtin.stat:
+        path: "{{ statefile }}"
+      register: st
+      delegate_to: localhost
+
+    - name: Fail if no saved state exists
+      ansible.builtin.fail:
+        msg: "{{ device_name }} | no saved ISIS overload state ({{ statefile }})"
+      when: not st.stat.exists
+
+    - name: Load saved overload lines
+      ansible.builtin.set_fact:
+        saved_overload: "{{ lookup('file', statefile) | from_json }}"
+
+    - name: Restore overload (delete current, then re-apply saved)
+      juniper.device.config:
+        load: set
+        lines: "{{ ['delete protocols isis overload'] + saved_overload }}"
+        commit: true
+        comment: "Ansible restore_isis_overload"
+
+    - name: Clear the state file
+      ansible.builtin.file:
+        path: "{{ statefile }}"
+        state: absent
+      delegate_to: localhost

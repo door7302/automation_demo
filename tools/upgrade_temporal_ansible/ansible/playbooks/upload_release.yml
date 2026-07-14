@@ -1,0 +1,164 @@
+---
+# ==========================================================================
+# upload_release.yml
+# Upload a Junos release image from a local repo to a router under /var/tmp,
+# using its associated ".md5" checksum file for idempotency / integrity.
+#
+# Logic:
+#   1. Read the local MD5 from "<release>.md5" (local repo).
+#   2. Ask the router to compute the MD5 of the file already in /var/tmp
+#      (RPC get-checksum-information -> "file checksum md5 <path>").
+#   3. If the file is present AND its MD5 matches -> skip the upload.
+#      Otherwise (file missing OR checksum mismatch) -> SCP it over
+#      (max 30 min), then recompute the remote MD5.
+#   4. Assert the final remote MD5 matches the local one, else fail.
+#
+# Required extra-vars (override defaults with -e):
+#   local_repo   : local folder holding the release + its .md5 file
+#   release_file : release image filename (e.g. junos-install-mx-x86-64-23.4R1.9.tgz)
+#
+# Optional:
+#   md5_file     : name of the checksum file (default "<release_file>.md5")
+#   remote_dir   : destination directory on the router (default /var/tmp)
+#
+# Examples:
+#   ansible-playbook playbooks/upload_release.yml \
+#     -e local_repo=/data/images \
+#     -e release_file=junos-install-mx-x86-64-23.4R1.9.tgz
+#
+#   ansible-playbook playbooks/upload_release.yml --limit router1 \
+#     -e local_repo=/data/images -e release_file=junos-evo-23.4R1.9.iso
+# ==========================================================================
+- name: Upload a Junos release to the router (idempotent, MD5-checked)
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    remote_dir: /var/tmp
+    md5_file: "{{ release_file }}.md5"
+    local_release_path: "{{ local_repo }}/{{ release_file }}"
+    local_md5_path: "{{ local_repo }}/{{ md5_file }}"
+    remote_path: "{{ remote_dir }}/{{ release_file }}"
+  tasks:
+
+    - name: Validate required variables are provided
+      ansible.builtin.assert:
+        that:
+          - local_repo is defined and local_repo | length > 0
+          - release_file is defined and release_file | length > 0
+        fail_msg: "You must pass -e local_repo=<folder> -e release_file=<filename>"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Check the local release image exists
+      ansible.builtin.stat:
+        path: "{{ local_release_path }}"
+      register: local_release_stat
+      delegate_to: localhost
+
+    - name: Check the local MD5 file exists
+      ansible.builtin.stat:
+        path: "{{ local_md5_path }}"
+      register: local_md5_stat
+      delegate_to: localhost
+
+    - name: Assert local release and MD5 files are present
+      ansible.builtin.assert:
+        that:
+          - local_release_stat.stat.exists
+          - local_md5_stat.stat.exists
+        fail_msg: >-
+          Missing local file(s):
+          release '{{ local_release_path }}' exists={{ local_release_stat.stat.exists }},
+          md5 '{{ local_md5_path }}' exists={{ local_md5_stat.stat.exists }}
+      delegate_to: localhost
+
+    - name: Read the local MD5 checksum file
+      ansible.builtin.set_fact:
+        local_md5: "{{ (lookup('file', local_md5_path) | regex_search('[0-9a-fA-F]{32}')) | lower }}"
+
+    - name: Assert local MD5 looks valid (32 hex chars)
+      ansible.builtin.assert:
+        that:
+          - local_md5 is not none
+          - local_md5 | length == 32
+        fail_msg: "Could not extract a valid MD5 hash from {{ local_md5_path }}"
+      delegate_to: localhost
+
+    - name: Compute MD5 of the file already on the router (if any)
+      juniper.device.rpc:
+        rpcs:
+          - get-checksum-information
+        kwargs:
+          path: "{{ remote_path }}"
+        formats: xml
+      register: remote_cksum
+      failed_when: false
+
+    - name: Extract remote MD5 (empty string when the file is absent)
+      ansible.builtin.set_fact:
+        remote_md5: >-
+          {{ (((remote_cksum.parsed_output | default({}, true))
+               .get('checksum-information', {})
+               .get('file-checksum', {})
+               .get('checksum', '')) | string | trim | lower) }}
+
+    - name: Decide whether an upload is required
+      ansible.builtin.set_fact:
+        need_upload: "{{ remote_md5 != local_md5 }}"
+
+    - name: Pre-upload status
+      ansible.builtin.debug:
+        msg:
+          - "device        : {{ device_name }}"
+          - "release        : {{ release_file }}"
+          - "local md5      : {{ local_md5 }}"
+          - "remote md5     : {{ remote_md5 if remote_md5 | length > 0 else '(file not present)' }}"
+          - "action         : {{ 'UPLOAD' if need_upload | bool else 'SKIP (already up to date)' }}"
+
+    - name: Upload the release image via SCP
+      juniper.device.file_copy:
+        protocol: scp
+        action: put
+        local_dir: "{{ local_repo }}"
+        remote_dir: "{{ remote_dir }}"
+        file: "{{ release_file }}"
+        checksum: true
+      when: need_upload | bool
+
+    - name: Recompute MD5 on the router after upload
+      juniper.device.rpc:
+        rpcs:
+          - get-checksum-information
+        kwargs:
+          path: "{{ remote_path }}"
+        formats: xml
+      register: post_cksum
+      when: need_upload | bool
+
+    - name: Extract post-upload remote MD5
+      ansible.builtin.set_fact:
+        final_md5: >-
+          {{ (((post_cksum.parsed_output | default({}, true))
+               .get('checksum-information', {})
+               .get('file-checksum', {})
+               .get('checksum', '')) | string | trim | lower) }}
+      when: need_upload | bool
+
+    - name: Use existing remote MD5 when the upload was skipped
+      ansible.builtin.set_fact:
+        final_md5: "{{ remote_md5 }}"
+      when: not need_upload | bool
+
+    - name: Assert the release on the router matches the local MD5
+      ansible.builtin.assert:
+        that:
+          - final_md5 == local_md5
+        success_msg: >-
+          {{ device_name }} | {{ release_file }} present in {{ remote_dir }}
+          with matching MD5 ({{ local_md5 }})
+          {{ '[uploaded]' if need_upload | bool else '[already present]' }}
+        fail_msg: >-
+          {{ device_name }} | MD5 mismatch after
+          {{ 'upload' if need_upload | bool else 'check' }} ->
+          expected {{ local_md5 }}, got '{{ final_md5 }}'

@@ -1,0 +1,30 @@
+name: temporal-stack-ansible
+
+# HTTPS override: adds an nginx reverse proxy that terminates TLS in front of
+# the Web UI. The UI itself is NOT published — all access goes through nginx.
+#
+#   Browser --HTTPS--> nginx:8081 --HTTP--> temporal-ui:8090 --gRPC--> temporal:7233
+#
+# Prerequisite (once): bash certs/generate-certs.sh
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+# Then open: https://localhost:8081
+
+services:
+  temporal-ui:
+    environment:
+      TEMPORAL_CORS_ORIGINS: https://localhost:8081
+
+  nginx:
+    container_name: temporal-ansible-nginx
+    image: nginx:1.27-alpine
+    depends_on:
+      - temporal-ui
+    ports:
+      - "8081:8081"            # HTTPS entry port
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    networks:
+      - temporal-network

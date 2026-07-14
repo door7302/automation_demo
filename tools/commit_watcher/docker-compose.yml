@@ -1,0 +1,18 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: junos-commits-mongo
+    restart: unless-stopped
+    ports:
+      # host:container — expose MongoDB on localhost:27017
+      - "127.0.0.1:27017:27017"
+    environment:
+      # Optional authentication. If you enable these, update MONGODB_URI to
+      # mongodb://<user>:<pass>@localhost:27017/?authSource=admin
+      # MONGO_INITDB_ROOT_USERNAME: root
+      # MONGO_INITDB_ROOT_PASSWORD: change-me
+      MONGO_INITDB_DATABASE: junos_commits
+    volumes:
+      # Bind-mount a directory on the host OS so the database survives
+      # container restarts/recreation. Change ./mongo-data to any host path.
+      - ./mongo-data:/data/db

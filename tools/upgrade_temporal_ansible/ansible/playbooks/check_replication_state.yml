@@ -1,0 +1,89 @@
+---
+# ==========================================================================
+# check_replication_state.yml
+# Wait for stateful (GRES/NSR) replication to become fully synchronized,
+# polling periodically up to a maximum timeout:
+#
+#   1. "show task replication"  (RPC get-routing-task-replication-state)
+#      -> every protocol in the list must be in state "Complete"
+#         (the protocol list can vary: BGP, IS-IS, MPLS, LDP, ...).
+#
+#   2. "show bgp replication"   (RPC get-bgp-replication-information)
+#      -> bgp-rsync-rt-state must be "Complete".
+#
+# The play exits as soon as both conditions are Complete. If replication is
+# still not Complete after the deadline, it raises an error with details.
+#
+#   ansible-playbook playbooks/check_replication_state.yml
+#   ansible-playbook playbooks/check_replication_state.yml --limit router1
+#
+# Tunables (override with -e):
+#   poll_interval : seconds between attempts (default 30)
+#   poll_timeout  : overall deadline in seconds (default 1800 = 30 min)
+# ==========================================================================
+- name: Check stateful replication state
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    poll_interval: 30
+    poll_timeout: 1800
+    poll_retries: "{{ (poll_timeout / poll_interval) | int }}"
+  tasks:
+
+    - name: Wait until replication is fully Complete
+      block:
+
+        - name: "{{ device_name }} | Poll task replication (every {{ poll_interval }}s, max {{ (poll_timeout / 60) | int }} min)"
+          juniper.device.rpc:
+            rpcs: get-routing-task-replication-state
+            formats: xml
+          register: taskrep
+          until: >-
+            (( [taskrep.parsed_output['task-replication-state']['task-protocol-replication']]
+               if taskrep.parsed_output['task-replication-state']['task-protocol-replication'] is mapping
+               else taskrep.parsed_output['task-replication-state']['task-protocol-replication'] )
+             | rejectattr('task-protocol-replication-state', 'equalto', 'Complete')
+             | list | length) == 0
+          retries: "{{ poll_retries }}"
+          delay: "{{ poll_interval }}"
+
+        - name: "{{ device_name }} | Poll BGP replication (every {{ poll_interval }}s, max {{ (poll_timeout / 60) | int }} min)"
+          juniper.device.rpc:
+            rpcs: get-bgp-replication-information
+            formats: xml
+          register: bgprep
+          until: >-
+            bgprep.parsed_output['bgp-sync-information']['bgp-rsync-master']['bgp-rsync-rt-state'] == 'Complete'
+          retries: "{{ poll_retries }}"
+          delay: "{{ poll_interval }}"
+
+        - name: "{{ device_name }} | Result"
+          ansible.builtin.debug:
+            msg: >-
+              {{ device_name }} | replication fully synchronized (all Complete) —
+              bgp-rsync-rt-state={{ bgprep.parsed_output['bgp-sync-information']['bgp-rsync-master']['bgp-rsync-rt-state'] }}
+
+      rescue:
+
+        - name: "{{ device_name }} | Collect protocols not Complete"
+          ansible.builtin.set_fact:
+            protocols_not_complete: >-
+              {{ (( [taskrep.parsed_output['task-replication-state']['task-protocol-replication']]
+                    if taskrep.parsed_output['task-replication-state']['task-protocol-replication'] is mapping
+                    else taskrep.parsed_output['task-replication-state']['task-protocol-replication'] )
+                  | rejectattr('task-protocol-replication-state', 'equalto', 'Complete')
+                  | map(attribute='task-protocol-replication-name') | list) }}
+            bgp_rt_state: >-
+              {{ ((bgprep | default({})).parsed_output | default({}, true))
+                  .get('bgp-sync-information', {})
+                  .get('bgp-rsync-master', {})
+                  .get('bgp-rsync-rt-state', 'unknown') }}
+
+        - name: "{{ device_name }} | Raise error - replication NOT complete after {{ (poll_timeout / 60) | int }} min"
+          ansible.builtin.fail:
+            msg: >-
+              {{ device_name }} | replication NOT complete after
+              {{ (poll_timeout / 60) | int }} min ->
+              protocols not Complete: {{ protocols_not_complete }},
+              bgp-rsync-rt-state: {{ bgp_rt_state }}

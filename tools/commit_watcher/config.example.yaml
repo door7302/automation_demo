@@ -1,0 +1,59 @@
+# Configuration for syslog_commit_watcher.py
+#
+# Copy this file to `config.yaml` and adjust the values.
+# Every value can also be overridden with an environment variable
+# (shown in [brackets] below).
+
+# Commit-detection back-end:
+#   syslog  - listen for UI_COMMIT_COMPLETED syslog messages (default)
+#   gnmi    - subscribe to gNMI on-change commit events (see `gnmi:` below)
+#   both    - run syslog and gNMI at the same time
+watcher:
+  mode: syslog         # [WATCHER_MODE] syslog | gnmi | both
+
+syslog:
+  host: 0.0.0.0        # [SYSLOG_HOST] interface to bind the UDP listener to
+  port: 514           # [SYSLOG_PORT] UDP port to listen on (514 needs root)
+
+# gNMI on-change subscription (used when watcher.mode is `gnmi` or `both`).
+# Subscribes to /junos/events/event[id=UI_COMMIT_PROGRESS] on each router and
+# reacts when a "commit complete" message is streamed.
+gnmi:
+  port: 32767          # [GNMI_PORT] gNMI TCP port on the routers
+  user: netops         # [GNMI_USER]
+  passwd: change-me    # [GNMI_PASSWD]
+  insecure: false      # [GNMI_INSECURE] true = plaintext (no TLS)
+  skip_verify: true    # [GNMI_SKIP_VERIFY] skip TLS certificate validation
+  reconnect_delay: 10  # [GNMI_RECONNECT_DELAY] seconds before re-subscribing
+  routers:
+    - name: short-name       # label stored as `source` in MongoDB
+      hostname: rtme-mx      # address used for the gNMI + NETCONF sessions
+    # - name: core-router-2
+    #   hostname: 10.0.0.2
+
+mongodb:
+  uri: mongodb://localhost:27017   # [MONGODB_URI]
+  database: junos_commits          # [MONGODB_DB]
+  collection: commit_diffs         # [MONGODB_COLLECTION]
+
+# Web UI served by webapp.py.
+web:
+  host: 0.0.0.0        # [WEB_HOST] interface to bind the HTTP(S) server to
+  port: 8080           # [WEB_PORT]
+  ssl:
+    enabled: false     # [WEB_SSL_ENABLED] serve over HTTPS when true
+    certfile:          # [WEB_SSL_CERTFILE] path to the TLS certificate (PEM)
+    keyfile:           # [WEB_SSL_KEYFILE] path to the TLS private key (PEM)
+
+devices:
+  # Connect to the packet source IP by default. Set to true to instead
+  # connect to the hostname reported in the syslog message.
+  connect_by_hostname: false
+
+  # Credentials/params applied to every device (forwarded to JuniperDevice).
+  defaults:
+    user: netops
+    passwd: change-me
+    port: 830
+    timeout: 30
+    # ssh_private_key_file: /home/netops/.ssh/id_rsa

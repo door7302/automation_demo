@@ -1,0 +1,239 @@
+---
+# ==========================================================================
+# guided_upgrade.yml  (Option A — CLI umbrella, no AWX)
+#
+# Runs the same Junos upgrade sequence as the AWX "Junos Guided Upgrade"
+# workflow, but as ONE ansible-playbook run on the controller — no AWX,
+# no Automation Controller, no job templates.
+#
+# It chains the individual playbooks with `import_playbook` (linear, static)
+# and inserts interactive APPROVAL GATES (ansible.builtin.pause) between the
+# phases. At each gate:
+#     * press ENTER            -> proceed
+#     * press Ctrl-C then A    -> abort the whole run
+#
+# DIFFERENCES vs. the AWX workflow (by design — see GUIDED_UPGRADE.md):
+#   * Approvals are proceed/abort, not the AWX "deny -> skip this branch".
+#   * There is NO automatic rollback on failure. If a phase fails the run
+#     stops; recover by running the rollback playbook (see GUIDED_UPGRADE.md),
+#     e.g.:  ansible-playbook playbooks/rollback_drain.yml -e target_hosts=...
+#   * Optional phases (upgrade / reboot) are skipped at LAUNCH with
+#     --skip-tags, not interactively:
+#        --skip-tags upgrade      # skip the software install
+#        --skip-tags reboot       # skip the reboot
+#        --skip-tags upgrade,reboot
+#
+# ---- Required parameters (extra-vars, global to every imported play) ----
+#   target_hosts : a host or group from inventory.yml
+#                  (e.g. rtme-mx-25  or  junos_devices)
+#   user         : device login username
+#   password     : device login password
+#   release_file : image filename to install (already in local_repo)
+#   local_repo   : controller folder holding the image + its .md5
+#
+# ---- Run ----
+#   ansible-galaxy collection install -r requirements.yml
+#   ansible-playbook playbooks/guided_upgrade.yml \
+#     -e target_hosts=rtme-mx-25 \
+#     -e user=regress -e password=secret \
+#     -e release_file=junos-install-mx-x86-64-23.4R1.9.tgz \
+#     -e local_repo=/var/tmp/images
+#
+#   # keep secrets out of shell history — put them in a file instead:
+#   ansible-playbook playbooks/guided_upgrade.yml -e @upgrade-params.yml
+#
+#   # skip the reboot:
+#   ansible-playbook playbooks/guided_upgrade.yml -e @upgrade-params.yml \
+#     --skip-tags reboot
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# 0. Preflight — echo the parameters and confirm before touching anything.
+# --------------------------------------------------------------------------
+- name: Preflight — review parameters
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tags: always
+  tasks:
+    - name: Fail early if a required parameter is missing
+      ansible.builtin.assert:
+        that:
+          - target_hosts is defined and target_hosts | length > 0
+          - user is defined and user | length > 0
+          - password is defined and password | length > 0
+          - release_file is defined and release_file | length > 0
+          - local_repo is defined and local_repo | length > 0
+        fail_msg: >-
+          Missing required parameter(s). Pass:
+          -e target_hosts=... -e user=... -e password=...
+          -e release_file=... -e local_repo=...
+
+    - name: Confirm start
+      ansible.builtin.pause:
+        prompt: |
+
+          ================= Junos Guided Upgrade (CLI) =================
+          Target(s)     : {{ target_hosts }}
+          Login user    : {{ user }}
+          Release image : {{ release_file }}
+          Local repo    : {{ local_repo }}
+          Skipped phases: (use --skip-tags upgrade,reboot to skip)
+          =============================================================
+
+          Press ENTER to run the pre-checks, or Ctrl-C then A to abort.
+
+# --------------------------------------------------------------------------
+# 1. Pre-checks + "before" snapshot.
+# --------------------------------------------------------------------------
+- import_playbook: check_node.yml
+  tags: prechecks
+- import_playbook: check_routing_engines.yml
+  tags: prechecks
+- import_playbook: snapshot.yml
+  vars:
+    snapshot_label: before
+  tags: prechecks
+
+# --------------------------------------------------------------------------
+# 2. Approval gate: drain traffic.
+# --------------------------------------------------------------------------
+- name: Gate — drain traffic
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tags: drain
+  tasks:
+    - name: Approve drain
+      ansible.builtin.pause:
+        prompt: |
+
+          Pre-checks passed and a "before" snapshot was captured.
+          Next: DRAIN traffic on {{ target_hosts }}
+                (ISIS overload -> deactivate BGP -> deactivate
+                 routing-instances -> shut interfaces -> deactivate GRES/NSR).
+
+          Press ENTER to drain, or Ctrl-C then A to abort.
+
+# --------------------------------------------------------------------------
+# 3. Drain.  (On failure the run stops — see rollback in GUIDED_UPGRADE.md.)
+# --------------------------------------------------------------------------
+- import_playbook: set_isis_overload.yml
+  tags: drain
+- import_playbook: deactivate_bgp_groups.yml
+  tags: drain
+- import_playbook: deactivate_ri.yml
+  tags: drain
+- import_playbook: shut_interfaces.yml
+  tags: drain
+- import_playbook: deactivate_gres_nsr.yml
+  tags: drain
+
+# --------------------------------------------------------------------------
+# 4. Approval gate: upload image.
+# --------------------------------------------------------------------------
+- name: Gate — upload release
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tags: upload
+  tasks:
+    - name: Approve upload
+      ansible.builtin.pause:
+        prompt: |
+
+          Traffic drained. Next: UPLOAD {{ release_file }}
+          from {{ local_repo }} to {{ target_hosts }}:/var/tmp
+          (skipped automatically if already present with a matching MD5).
+
+          Press ENTER to upload, or Ctrl-C then A to abort.
+
+- import_playbook: upload_release.yml
+  tags: upload
+
+# --------------------------------------------------------------------------
+# 5. Approval gate + software install.   Skip with --skip-tags upgrade.
+# --------------------------------------------------------------------------
+- name: Gate — software upgrade
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tags: upgrade
+  tasks:
+    - name: Approve upgrade
+      ansible.builtin.pause:
+        prompt: |
+
+          Image uploaded. Next: INSTALL {{ release_file }} on {{ target_hosts }}
+          (no reboot yet).
+
+          Press ENTER to install, or Ctrl-C then A to abort.
+          (To skip the install, abort and rerun with --skip-tags upgrade.)
+
+- import_playbook: upgrade_software.yml
+  tags: upgrade
+
+# --------------------------------------------------------------------------
+# 6. Approval gate + reboot.   Skip with --skip-tags reboot.
+# --------------------------------------------------------------------------
+- name: Gate — reboot
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tags: reboot
+  tasks:
+    - name: Approve reboot
+      ansible.builtin.pause:
+        prompt: |
+
+          Software installed. Next: REBOOT {{ target_hosts }}.
+
+          Press ENTER to reboot, or Ctrl-C then A to abort.
+          (To skip the reboot, abort and rerun with --skip-tags reboot.)
+
+- import_playbook: reboot.yml
+  tags: reboot
+
+# --------------------------------------------------------------------------
+# 7. Post-checks + restore service + "after" snapshot + diff.
+# --------------------------------------------------------------------------
+- import_playbook: check_node.yml
+  tags: postchecks
+- import_playbook: check_routing_engines.yml
+  tags: postchecks
+- import_playbook: check_fpc_online.yml
+  tags: postchecks
+- import_playbook: unshut_interfaces.yml
+  tags: restore
+- import_playbook: activate_ri.yml
+  tags: restore
+- import_playbook: activate_bgp_groups.yml
+  tags: restore
+- import_playbook: restore_isis_overload.yml
+  tags: restore
+- import_playbook: activate_gres_nsr.yml
+  tags: restore
+- import_playbook: check_replication_state.yml
+  tags: postchecks
+- import_playbook: snapshot.yml
+  vars:
+    snapshot_label: after
+  tags: postchecks
+- import_playbook: diff_snapshots.yml
+  tags: postchecks
+
+# --------------------------------------------------------------------------
+# 8. Done.
+# --------------------------------------------------------------------------
+- name: Wrap up
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tags: always
+  tasks:
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          Guided upgrade complete on {{ target_hosts }}. Compare the
+          before/after snapshots under state/<device>/snapshots/ and review
+          the diff output above.

@@ -1,0 +1,69 @@
+---
+# ==========================================================================
+# reboot.yml
+# Reboot a Junos / Junos-Evolved device, or a specific Routing Engine.
+#
+# Uses juniper.device.system (action: reboot). RE targeting:
+#   re_target: both   -> reboot ALL REs            (all_re: true)   [default]
+#              local  -> reboot only the RE this play is connected to
+#                                                   (all_re: false, other_re: false)
+#              other  -> reboot only the OTHER RE  (other_re: true)
+#
+# vmhost reboot (request vmhost reboot) can be forced with -e vmhost=true
+# (needed on vmhost-based REs / to reboot the host OS as well).
+#
+# Optional scheduling:
+#   in_min : reboot in N minutes
+#   at     : reboot at a specific time ("hh:mm" or "yyyymmddhhmm")
+#
+# A failed reboot request fails the play (error is raised).
+#
+# Examples:
+#   ansible-playbook playbooks/reboot.yml --limit router1
+#   ansible-playbook playbooks/reboot.yml --limit router1 -e re_target=other
+#   ansible-playbook playbooks/reboot.yml --limit router1 -e re_target=local
+#   ansible-playbook playbooks/reboot.yml --limit router1 -e vmhost=true
+#   ansible-playbook playbooks/reboot.yml --limit router1 -e in_min=5
+# ==========================================================================
+- name: Reboot device or a given Routing Engine
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    re_target: both
+    vmhost: false
+    # in_min / at are intentionally left undefined by default.
+    reboot_all_re: "{{ re_target == 'both' }}"
+    reboot_other_re: "{{ re_target == 'other' }}"
+  tasks:
+
+    - name: Validate re_target
+      ansible.builtin.assert:
+        that:
+          - re_target in ['both', 'local', 'other']
+        fail_msg: "re_target must be one of: both | local | other (got '{{ re_target }}')"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Reboot plan
+      ansible.builtin.debug:
+        msg:
+          - "device   : {{ device_name }}"
+          - "platform  : {{ 'EVO' if (software | default('junos')) | lower == 'evo' else 'Junos' }}"
+          - "target    : {{ re_target }} (all_re={{ reboot_all_re }}, other_re={{ reboot_other_re }})"
+          - "vmhost    : {{ vmhost }}"
+          - "when      : {{ ('in ' ~ in_min ~ ' min') if in_min is defined else (('at ' ~ at) if at is defined else 'now') }}"
+
+    - name: Request reboot
+      juniper.device.system:
+        action: reboot
+        all_re: "{{ reboot_all_re }}"
+        other_re: "{{ reboot_other_re }}"
+        vmhost: "{{ vmhost }}"
+        in_min: "{{ in_min | default(omit) }}"
+        at: "{{ at | default(omit) }}"
+      register: reboot_result
+
+    - name: Reboot result
+      ansible.builtin.debug:
+        msg: "{{ device_name }} | {{ reboot_result.msg | default('reboot requested') }}"

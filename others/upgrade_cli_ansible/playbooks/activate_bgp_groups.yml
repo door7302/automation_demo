@@ -1,0 +1,43 @@
+---
+# ==========================================================================
+# activate_bgp_groups.yml
+# Re-activate ("activate protocols bgp group <name>") the BGP groups that were
+# deactivated by deactivate_bgp_groups.yml, then clear the state file.
+# ==========================================================================
+- name: Activate BGP groups
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    statefile: "{{ state_dir }}/{{ device_name }}/bgp_groups.json"
+  tasks:
+
+    - name: Read saved deactivated group list
+      ansible.builtin.stat:
+        path: "{{ statefile }}"
+      register: st
+      delegate_to: localhost
+
+    - name: Load saved groups
+      ansible.builtin.set_fact:
+        saved_groups: "{{ (lookup('file', statefile) | from_json) if st.stat.exists else [] }}"
+
+    - name: Nothing to do
+      ansible.builtin.debug:
+        msg: "{{ device_name }} | no saved deactivated BGP groups"
+      when: saved_groups | length == 0
+
+    - name: Re-activate the groups
+      juniper.device.config:
+        load: set
+        lines: "{{ saved_groups | map('regex_replace', '^(.+)$', 'activate protocols bgp group \\1') | list }}"
+        commit: true
+        comment: "Ansible activate_bgp_groups"
+      when: saved_groups | length > 0
+
+    - name: Clear the state file
+      ansible.builtin.file:
+        path: "{{ statefile }}"
+        state: absent
+      delegate_to: localhost
+      when: saved_groups | length > 0

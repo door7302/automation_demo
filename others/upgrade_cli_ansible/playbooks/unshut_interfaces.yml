@@ -1,0 +1,43 @@
+---
+# ==========================================================================
+# unshut_interfaces.yml
+# Re-enable ("delete interfaces <if> disable") the interfaces previously
+# disabled by shut_interfaces.yml, then clear the state file.
+# ==========================================================================
+- name: Re-enable previously shut interfaces
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    statefile: "{{ state_dir }}/{{ device_name }}/shutdown_interfaces.json"
+  tasks:
+
+    - name: Read saved shutdown list
+      ansible.builtin.stat:
+        path: "{{ statefile }}"
+      register: st
+      delegate_to: localhost
+
+    - name: Load saved interfaces
+      ansible.builtin.set_fact:
+        saved_interfaces: "{{ (lookup('file', statefile) | from_json) if st.stat.exists else [] }}"
+
+    - name: Nothing to do
+      ansible.builtin.debug:
+        msg: "{{ device_name }} | no saved shutdown interfaces"
+      when: saved_interfaces | length == 0
+
+    - name: Re-enable the interfaces
+      juniper.device.config:
+        load: set
+        lines: "{{ saved_interfaces | map('regex_replace', '^(.+)$', 'delete interfaces \\1 disable') | list }}"
+        commit: true
+        comment: "Ansible unshut_interfaces"
+      when: saved_interfaces | length > 0
+
+    - name: Clear the state file
+      ansible.builtin.file:
+        path: "{{ statefile }}"
+        state: absent
+      delegate_to: localhost
+      when: saved_interfaces | length > 0

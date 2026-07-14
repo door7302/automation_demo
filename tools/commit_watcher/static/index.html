@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Junos Commit Watcher</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128225;</text></svg>" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <div>
+        <h1>Junos Commit Watcher</h1>
+        <p class="subtitle">Configuration change archive</p>
+      </div>
+    </div>
+    <button id="theme-toggle" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">
+      <span class="theme-icon"></span>
+    </button>
+  </header>
+
+  <section class="controls">
+    <div class="field">
+      <label for="from">From</label>
+      <input type="datetime-local" id="from" />
+    </div>
+    <div class="field">
+      <label for="to">To</label>
+      <input type="datetime-local" id="to" />
+    </div>
+    <div class="field presets">
+      <label>Quick range</label>
+      <div class="preset-row">
+        <button class="chip" data-hours="24">24h</button>
+        <button class="chip" data-hours="168">7d</button>
+        <button class="chip" data-hours="720">30d</button>
+        <button class="chip" data-hours="0">All</button>
+      </div>
+    </div>
+    <div class="field grow">
+      <label for="source-input">Routers</label>
+      <div class="token-input" id="token-input">
+        <input type="text" id="source-input" placeholder="Search routers…"
+               autocomplete="off" role="combobox" aria-expanded="false"
+               aria-autocomplete="list" aria-controls="source-suggestions" />
+        <ul id="source-suggestions" class="suggestions hidden" role="listbox"></ul>
+      </div>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="apply" class="primary-btn">Apply</button>
+    </div>
+  </section>
+
+  <nav class="tabs">
+    <button class="tab active" data-view="changes">Changes</button>
+    <button class="tab" data-view="timeline">Timeline</button>
+    <span id="status" class="status"></span>
+  </nav>
+
+  <main>
+    <section id="view-changes" class="view active">
+      <div id="changes-list" class="changes-list"></div>
+      <div id="changes-empty" class="empty hidden">No changes in this range.</div>
+    </section>
+
+    <section id="view-timeline" class="view">
+      <div id="timeline" class="timeline"></div>
+      <div id="timeline-empty" class="empty hidden">No changes in this range.</div>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip hidden" role="tooltip"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

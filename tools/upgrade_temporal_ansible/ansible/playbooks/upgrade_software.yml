@@ -1,0 +1,148 @@
+---
+# ==========================================================================
+# upgrade_software.yml
+# Trigger a Junos / Junos-Evolved software upgrade from an image already
+# present in /var/tmp on the router (see upload_release.yml).
+#
+# This play DOES NOT reboot the device (reboot: false). It only installs
+# the pending image. A failed install fails the play (error is raised).
+#
+# Platform handling (auto-detected from the inventory "software" field):
+#   * EVO  (software == "evo")  -> both Routing Engines are upgraded
+#                                  automatically (all_re: true). The
+#                                  "re_target" option is ignored.
+#   * Junos (software == "junos") -> you choose which RE(s) to install on
+#                                  via "re_target": both | re0 | re1.
+#
+# vmhost vs. Junos install is auto-detected from the release filename:
+#   if the filename contains "vmhost" -> a vmhost upgrade is performed.
+#
+# NOTE on single-RE installs (Junos):
+#   The juniper.device.software module supports "all REs" (all_re: true) or
+#   "the RE this play is connected to" (all_re: false). It cannot target an
+#   arbitrary backup slot while connected to the master. Therefore re0/re1
+#   both map to all_re: false and install on the RE the connection lands on
+#   (normally the master). Point the connection at the desired RE to install
+#   on a specific slot. "both" installs on all REs.
+#
+# Required extra-vars:
+#   release_file : image filename already uploaded to /var/tmp
+#                  (e.g. junos-install-mx-x86-64-23.4R1.9.tgz
+#                   or   junos-vmhost-install-mx-x86-64-23.4R1.9.tgz)
+#
+# Optional:
+#   re_target      : both (default) | re0 | re1   (Junos only)
+#   remote_dir     : where the image sits on the router (default /var/tmp)
+#   validate_config: run "validate" against the new image (default false)
+#   install_timeout: install RPC timeout in seconds (default 1800 = 30 min)
+#   target_version : override the version the module compares against. By
+#                    default it is parsed from the release filename.
+#   force_install  : true bypasses the "already at target version" check and
+#                    (re)stages the image regardless. Useful on vmhost dual-
+#                    root systems where the module reads the version from the
+#                    NON-running root set and wrongly reports "same version".
+#
+# Examples:
+#   ansible-playbook playbooks/upgrade_software.yml --limit router1 \
+#     -e release_file=junos-install-mx-x86-64-23.4R1.9.tgz -e re_target=both
+#
+#   ansible-playbook playbooks/upgrade_software.yml --limit router1 \
+#     -e release_file=junos-vmhost-install-mx-x86-64-23.4R1.9.tgz -e re_target=re0
+#
+#   ansible-playbook playbooks/upgrade_software.yml --limit router2 \
+#     -e release_file=junos-evo-install-ptx-x86-64-23.4R1.9.iso
+# ==========================================================================
+- name: Upgrade Junos / EVO software (no reboot)
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    remote_dir: /var/tmp
+    re_target: both
+    validate_config: false
+    install_timeout: 1800
+    # target_version is left undefined by default (module parses it from the
+    # filename). force_install bypasses the version-match short-circuit.
+    force_install: false
+    remote_package: "{{ remote_dir }}/{{ release_file }}"
+    is_evo: "{{ (software | default('junos')) | lower == 'evo' }}"
+    is_vmhost: "{{ 'vmhost' in (release_file | default('') | lower) }}"
+    # EVO always upgrades both REs; Junos follows re_target (both -> all REs).
+    install_all_re: "{{ true if ((software | default('junos')) | lower == 'evo') else (re_target == 'both') }}"
+  tasks:
+
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - release_file is defined and release_file | length > 0
+          - re_target in ['both', 're0', 're1']
+        fail_msg: >-
+          You must pass -e release_file=<filename> and (optionally)
+          -e re_target=both|re0|re1 (got re_target='{{ re_target }}')
+      run_once: true
+      delegate_to: localhost
+
+    - name: Confirm the image is present on the router
+      juniper.device.rpc:
+        rpcs:
+          - file-list
+        kwargs:
+          path: "{{ remote_package }}"
+        formats: xml
+      register: file_check
+      failed_when: >-
+        ('<file-name>' ~ remote_package ~ '</file-name>')
+        not in (file_check.stdout | default('', true))
+
+    - name: Note that re_target is ignored on EVO (both REs always upgraded)
+      ansible.builtin.debug:
+        msg: "{{ device_name }} | EVO platform: re_target='{{ re_target }}' ignored, upgrading BOTH REs"
+      when: is_evo | bool and re_target != 'both'
+
+    - name: Upgrade plan
+      ansible.builtin.debug:
+        msg:
+          - "device        : {{ device_name }}"
+          - "platform       : {{ 'EVO' if is_evo | bool else 'Junos' }}"
+          - "image          : {{ remote_package }}"
+          - "install type   : {{ 'vmhost' if is_vmhost | bool else 'junos' }}"
+          - "target REs      : {{ 'both (all_re)' if install_all_re | bool else 're_target=' ~ re_target ~ ' (connected RE, all_re=false)' }}"
+          - "reboot          : NO"
+
+    - name: Install the software image (no reboot)
+      juniper.device.software:
+        # Run in local (in-process PyEZ) mode. Over the persistent pyez
+        # connection the install RPC goes through __rpc__ and is capped by the
+        # 60s persistent command timeout ("command timeout triggered, timeout
+        # value is 60 secs"), which is far too short for a (vmhost) install.
+        # Local mode calls sw.install() directly and honours install_timeout.
+        host: "{{ ansible_host | default(device_name) }}"
+        user: "{{ ansible_user }}"
+        passwd: "{{ ansible_password | default(omit) }}"
+        port: "{{ ansible_port | default(830) }}"
+        remote_package: "{{ remote_package }}"
+        no_copy: true
+        cleanfs: false
+        reboot: false
+        all_re: "{{ install_all_re }}"
+        vmhost: "{{ is_vmhost }}"
+        validate: "{{ validate_config }}"
+        # By default the module derives the target version from the filename
+        # and skips (changed=false) if it thinks the device already runs it.
+        # On vmhost dual-root systems that check can misfire (it reads the
+        # inactive root set). force_install=true passes version:false, which
+        # bypasses the check and (re)stages the image; target_version lets you
+        # set the compared version explicitly instead.
+        version: "{{ false if (force_install | bool) else (target_version | default(omit)) }}"
+        install_timeout: "{{ install_timeout }}"
+      vars:
+        ansible_connection: local
+      register: upgrade_result
+
+    - name: Upgrade result
+      ansible.builtin.debug:
+        msg:
+          - "device  : {{ device_name }}"
+          - "changed  : {{ upgrade_result.changed }}"
+          - "message  : {{ upgrade_result.msg | default('') }}"
+          - "reminder : image staged, reboot NOT performed by this play"
