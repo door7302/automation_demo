@@ -2,9 +2,13 @@
 # ==========================================================================
 # check_fpc_online.yml
 # Wait for all present FPCs to reach the "Online" state, polling until a
-# 30-second deadline. Empty slots (state "Empty") are ignored. As soon as
-# every present FPC is Online the play succeeds; if one or more are still
-# not Online after the timeout, it raises an error listing the bad slots.
+# deadline. Empty slots (state "Empty") are ignored. As soon as every present
+# FPC is Online the play succeeds; if one or more are still not Online after
+# the timeout, it raises an error listing the bad slots.
+#
+# FPCs come up well after the RE finishes booting, so after an upgrade/reboot
+# an FPC can sit in "Present" (detected, still initialising) for a few minutes
+# before it reaches "Online" — hence the generous default deadline below.
 #
 #   "show chassis fpc"  (RPC get-fpc-information)
 #
@@ -12,16 +16,16 @@
 #   ansible-playbook playbooks/check_fpc_online.yml --limit router1
 #
 # Tunables (override with -e):
-#   poll_interval : seconds between attempts (default 5)
-#   poll_timeout  : overall deadline in seconds (default 30)
+#   poll_interval : seconds between attempts (default 10)
+#   poll_timeout  : overall deadline in seconds (default 300)
 # ==========================================================================
 - name: Check all FPCs are Online
   hosts: "{{ target_hosts | default('junos_devices') }}"
   connection: juniper.device.pyez
   gather_facts: false
   vars:
-    poll_interval: 5
-    poll_timeout: 30
+    poll_interval: 10
+    poll_timeout: 600
     poll_retries: "{{ (poll_timeout / poll_interval) | int }}"
   tasks:
 

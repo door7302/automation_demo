@@ -178,9 +178,9 @@ To send a signal:
 - Open workflow with the GUI
 - Click on the right corner "More Actions" 
 - Select "Send a signal" option 
-- Select "operator_continue" signal and "Send" it 
+- Select "operator_continue" signal and then "Submit"
 
-
+![signal](images/signal.png)
 
 ### From the CLI
 
@@ -280,8 +280,8 @@ Per-host vars (set inside `hosts.<name>` in the JSON input):
 | `probe_timeout` | `1800` | check_node | Max seconds to wait for reachability. |
 | `poll_interval` | `30` | check_routing_engines, check_replication_state | Seconds between polls. |
 | `poll_timeout` | `1800` | check_routing_engines, check_replication_state | Max seconds to wait. |
-| `poll_interval` (fpc) | `5` | check_fpc_online | Seconds between FPC-online polls. |
-| `poll_timeout` (fpc) | `30` | check_fpc_online | Max seconds to wait for FPCs online. |
+| `poll_interval` (fpc) | `10` | check_fpc_online | Seconds between FPC-online polls. |
+| `poll_timeout` (fpc) | `600` | check_fpc_online | Max seconds to wait for all present FPCs to reach `Online` (they can sit in `Present` for minutes after a reboot). |
 
 > Whitelists (`interface_whitelist`, `bgp_group_whitelist`, `ri_whitelist`),
 > ISIS `overload_*` flags and `gres_nsr_knobs` are group_vars but are commonly

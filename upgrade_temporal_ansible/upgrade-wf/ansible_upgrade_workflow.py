@@ -259,8 +259,12 @@ class AnsibleUpgradeWorkflow:
             report.steps.append("reboot: OK")
 
             # Give the device a moment to actually go down (durable timer).
+            # Use workflow.sleep (not asyncio.sleep) so the timer carries its
+            # own summary and shows up as a distinct, clearly-named step in the
+            # Temporal Web UI timeline instead of being confused with the
+            # preceding "gate: reboot" timer.
             workflow.logger.info("Waiting 1 min before reachability polling")
-            await asyncio.sleep(60)
+            await workflow.sleep(60, summary="settle: wait before reachability poll")
 
             # check_node.yml polls up to 30 min for NETCONF to return.
             await self._pb(params, "check_node.yml", timeout=LONG_TIMEOUT)
