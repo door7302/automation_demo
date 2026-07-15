@@ -30,8 +30,20 @@
 
         - name: "{{ device_name }} | Poll RE states (every {{ poll_interval }}s, max {{ (poll_timeout / 60) | int }} min)"
           juniper.device.rpc:
+            # Local (in-process PyEZ) mode. Over the persistent pyez connection
+            # the module's get_rpc() path is broken with the installed
+            # ansible-core: the real error is swallowed and the module then
+            # raises "UnboundLocalError: local variable 'resp' referenced
+            # before assignment". Local mode calls the RPC directly and avoids
+            # that path (same approach as check_node.yml / reboot.yml).
+            host: "{{ ansible_host | default(device_name) }}"
+            user: "{{ ansible_user }}"
+            passwd: "{{ ansible_password | default(omit) }}"
+            port: "{{ ansible_port | default(830) }}"
             rpcs: get-route-engine-information
             formats: xml
+          vars:
+            ansible_connection: local
           register: re_info
           until: >-
             re_info.parsed_output is defined

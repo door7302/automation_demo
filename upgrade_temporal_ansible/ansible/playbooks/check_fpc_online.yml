@@ -30,21 +30,33 @@
 
         - name: "{{ device_name }} | Poll FPC states (every {{ poll_interval }}s, max {{ poll_timeout }}s)"
           juniper.device.rpc:
+            # Local (in-process PyEZ) mode. Over the persistent pyez connection
+            # the module's get_rpc() path is broken with the installed
+            # ansible-core: the real error is swallowed and the module then
+            # raises "UnboundLocalError: local variable 'resp' referenced
+            # before assignment". Local mode calls the RPC directly and avoids
+            # that path (same approach as check_node.yml / reboot.yml).
+            host: "{{ ansible_host | default(device_name) }}"
+            user: "{{ ansible_user }}"
+            passwd: "{{ ansible_password | default(omit) }}"
+            port: "{{ ansible_port | default(830) }}"
             rpcs: get-fpc-information
             formats: xml
+          vars:
+            ansible_connection: local
           register: fpc_info
           until: >-
-            (( [fpc_info.parsed_output['fpc-information']['fpc']]
-               if fpc_info.parsed_output['fpc-information']['fpc'] is mapping
-               else fpc_info.parsed_output['fpc-information']['fpc'] )
-             | rejectattr('state', 'equalto', 'Empty')
             fpc_info.parsed_output is defined
             and (( [fpc_info.parsed_output['fpc-information']['fpc']]
                    if fpc_info.parsed_output['fpc-information']['fpc'] is mapping
                    else fpc_info.parsed_output['fpc-information']['fpc'] )
                  | rejectattr('state', 'equalto', 'Empty')
                  | rejectattr('state', 'equalto', 'Online')
-            - name: "{{ device_name }} | Result"
+                 | list | length) == 0
+          retries: "{{ poll_retries }}"
+          delay: "{{ poll_interval }}"
+
+        - name: "{{ device_name }} | Result"
           ansible.builtin.debug:
             msg: >-
               {{ device_name }} | all present FPCs are Online
@@ -65,11 +77,7 @@
                     else fpc_info.parsed_output['fpc-information']['fpc'] )
                   | rejectattr('state', 'equalto', 'Empty')
                   | rejectattr('state', 'equalto', 'Online')
-                  | list) }}
-
-        - name: "{{ device_name }} | Raise error - FPCs not Online after {{ poll_timeout }}s"
-          ansible.builtin.fail:
-            msg: >-if fpc_info.parsed_output is defined else [] }}
+                  | list) if fpc_info.parsed_output is defined else [] }}
 
         - name: "{{ device_name }} | Raise error - FPCs not Online after {{ poll_timeout }}s"
           ansible.builtin.fail:
@@ -79,4 +87,4 @@
                       | zip(fpc_not_online | map(attribute='state') | list))
                  if (fpc_not_online | length > 0)
                  else ('no parseable FPC output; last RPC result: '
-                       ~ (fpc_info.msg | default('unknown')
+                       ~ (fpc_info.msg | default('unknown'))) }}
