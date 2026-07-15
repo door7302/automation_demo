@@ -50,13 +50,20 @@
           vars:
             ansible_connection: local
           register: taskrep
+          # Passes when GRES/stateful replication is Disabled (nothing to sync
+          # on this box) or when every replicated protocol is 'Complete'.
           until: >-
             taskrep.parsed_output is defined
-            and (( [taskrep.parsed_output['task-replication-state']['task-protocol-replication']]
-                   if taskrep.parsed_output['task-replication-state']['task-protocol-replication'] is mapping
-                   else taskrep.parsed_output['task-replication-state']['task-protocol-replication'] )
-                 | rejectattr('task-protocol-replication-state', 'equalto', 'Complete')
-                 | list | length) == 0
+            and (
+              (taskrep.parsed_output.get('task-replication-state', {}).get('task-gres-state') == 'Disabled')
+              or ((
+                    [taskrep.parsed_output['task-replication-state']['task-protocol-replication']]
+                    if taskrep.parsed_output.get('task-replication-state', {}).get('task-protocol-replication') is mapping
+                    else taskrep.parsed_output.get('task-replication-state', {}).get('task-protocol-replication', [])
+                  )
+                  | rejectattr('task-protocol-replication-state', 'equalto', 'Complete')
+                  | list | length) == 0
+            )
           retries: "{{ poll_retries }}"
           delay: "{{ poll_interval }}"
 
@@ -71,19 +78,25 @@
           vars:
             ansible_connection: local
           register: bgprep
+          # Passes when BGP is not running (no bgp-sync-information block) or
+          # when the master RT sync state is 'Complete'.
           until: >-
-            (bgprep.parsed_output | default({}, true))
-              .get('bgp-sync-information', {})
-              .get('bgp-rsync-master', {})
-              .get('bgp-rsync-rt-state') == 'Complete'
+            bgprep.parsed_output is defined
+            and (
+              ('bgp-sync-information' not in bgprep.parsed_output)
+              or (bgprep.parsed_output.get('bgp-sync-information', {})
+                    .get('bgp-rsync-master', {})
+                    .get('bgp-rsync-rt-state') == 'Complete')
+            )
           retries: "{{ poll_retries }}"
           delay: "{{ poll_interval }}"
 
         - name: "{{ device_name }} | Result"
           ansible.builtin.debug:
             msg: >-
-              {{ device_name }} | replication fully synchronized (all Complete) —
-              bgp-rsync-rt-state={{ bgprep.parsed_output['bgp-sync-information']['bgp-rsync-master']['bgp-rsync-rt-state'] }}
+              {{ device_name }} | replication OK
+              (gres={{ taskrep.parsed_output.get('task-replication-state', {}).get('task-gres-state', 'n/a') }},
+              bgp-rsync-rt-state={{ bgprep.parsed_output.get('bgp-sync-information', {}).get('bgp-rsync-master', {}).get('bgp-rsync-rt-state', 'n/a (BGP not running)') }})
 
       rescue:
 
@@ -91,8 +104,8 @@
           ansible.builtin.set_fact:
             protocols_not_complete: >-
               {{ (( [taskrep.parsed_output['task-replication-state']['task-protocol-replication']]
-                    if taskrep.parsed_output['task-replication-state']['task-protocol-replication'] is mapping
-                    else taskrep.parsed_output['task-replication-state']['task-protocol-replication'] )
+                    if taskrep.parsed_output.get('task-replication-state', {}).get('task-protocol-replication') is mapping
+                    else taskrep.parsed_output.get('task-replication-state', {}).get('task-protocol-replication', []) )
                   | rejectattr('task-protocol-replication-state', 'equalto', 'Complete')
                   | map(attribute='task-protocol-replication-name') | list)
                  if taskrep.parsed_output is defined else ['unknown (no parseable RPC output)'] }}
