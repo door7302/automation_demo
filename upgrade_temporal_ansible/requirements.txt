@@ -16,10 +16,14 @@ junos-eznc>=2.6.7
 ncclient>=0.6.13
 lxml>=4.6.0
 
-# juniper.device 1.0.7 imports `LooseVersion` from the stdlib `distutils`.
-# setuptools >= 81 removed its bundled distutils shim (and its
-# distutils-precedence.pth shadows the stdlib copy), so `import distutils`
-# fails and the collection crashes with
-# "NameError: name 'LooseVersion' is not defined". Keep setuptools below 81 so
-# distutils stays importable.
-setuptools<81
+# juniper.device 1.0.7 imports `LooseVersion` from the `looseversion` package
+# (`from looseversion import LooseVersion`). It is NOT a hard dependency of the
+# collection, so on a clean venv the import fails silently
+# (HAS_LOOSE_VERSION = False) and the modules crash with
+# "NameError: name 'LooseVersion' is not defined". Install it explicitly.
+looseversion>=1.3.0
+
+# jxmlease is required by the juniper.device modules (XML<->dict handling) and,
+# like looseversion, is not pulled in automatically. Without it the modules
+# fail with "jxmlease >= 1.0.1 is required for this module".
+jxmlease>=1.0.3
