@@ -1,29 +1,51 @@
-# Temporal SDK (the worker + client)
-temporalio>=1.7
+# ==========================================================================
+# Python dependencies for the Temporal worker + the bundled Ansible content.
+#
+# Versions are PINNED (==) on purpose. Every failure during the initial bring-up
+# on a fresh clone came from unpinned floors (>=) pulling the *latest* release,
+# which was newer/stricter than the juniper.device 1.0.7 collection expects
+# (e.g. lxml/ncclient/PyEZ changes, the removed community.general yaml callback,
+# missing looseversion/jxmlease). Pinning guarantees a reproducible, known-good
+# install regardless of when it is run.
+#
+# Verified-good set, tested on Python 3.10.12 with
+# juniper.device == 1.0.7 (see ansible/requirements.yml).
+#
+# Install into a dedicated venv:
+#   python3 -m venv .venv && source .venv/bin/activate
+#   python3 -m pip install -U pip
+#   python3 -m pip install -r requirements.txt
+#   ansible-galaxy collection install -r ansible/requirements.yml
+#
+# For a FULLY reproducible lock (incl. transitive deps), freeze this venv:
+#   python3 -m pip freeze > requirements.lock
+# and install fresh boxes with:  pip install -r requirements.lock
+# ==========================================================================
+
+# Temporal SDK (the worker + client).
+temporalio==1.30.0
 
 # Ansible — the worker shells out to `ansible-playbook` to run the bundled
 # ansible/playbooks set. PyYAML (used to generate the inventory) ships as an
-# Ansible dependency.
-ansible-core>=2.16.6
+# ansible-core dependency. NOTE: ansible-core bundles NO collections, so the
+# stdout callback is the core `default` one with result_format=yaml (see
+# ansible/ansible.cfg) — community.general is intentionally NOT required.
+ansible-core==2.17.14
 
-# The Junos playbooks use the juniper.device collection (PyEZ based). Install
-# it once with:  ansible-galaxy collection install -r ansible/requirements.yml
-#
-# The collection is Python-driven by Juniper PyEZ (junos-eznc), which provides
-# the NETCONF stack (ncclient). Without these the modules fail at runtime with
+# Juniper PyEZ stack driving the juniper.device collection (NETCONF over SSH).
+# Without these the modules fail at runtime with
 # "ncclient module could not be imported."
-junos-eznc>=2.6.7
-ncclient>=0.6.13
-lxml>=4.6.0
+junos-eznc==2.8.2
+ncclient==0.7.0
+lxml==6.1.1
 
 # juniper.device 1.0.7 imports `LooseVersion` from the `looseversion` package
 # (`from looseversion import LooseVersion`). It is NOT a hard dependency of the
-# collection, so on a clean venv the import fails silently
-# (HAS_LOOSE_VERSION = False) and the modules crash with
-# "NameError: name 'LooseVersion' is not defined". Install it explicitly.
-looseversion>=1.3.0
+# collection, so on a clean venv the import fails silently and the modules crash
+# with "NameError: name 'LooseVersion' is not defined". Install it explicitly.
+looseversion==1.3.0
 
 # jxmlease is required by the juniper.device modules (XML<->dict handling) and,
 # like looseversion, is not pulled in automatically. Without it the modules
 # fail with "jxmlease >= 1.0.1 is required for this module".
-jxmlease>=1.0.3
+jxmlease==1.0.3

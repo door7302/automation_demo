@@ -154,20 +154,46 @@ efficient — the same shape you'll use to render a timeline UI later.
 
 ### 3. Set up the Python environment (venv)
 
+> **Python version:** use **Python 3.10.x** (the verified-good set was built and
+> tested on 3.10.12). The compiled dependencies (`lxml`, `cryptography`,
+> `grpcio`, `ncclient`) ship version-specific wheels, so staying on 3.10.x is
+> what guarantees a clean install.
+
 From the **repository root**:
 
 ```bash
-cd $PWD/commit_watcher 
+cd $PWD/commit_watcher
 python3 -m venv .venv
-source .venv/bin/activate           
-
-# Install juniper_api dependencies
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e .
-
-# Install the watcher's own dependencies
-python -m pip install -r requirements.txt
+source .venv/bin/activate
+python -m pip install --upgrade pip
 ```
+
+**Recommended — reproducible install (exact pinned versions):**
+
+```bash
+# Third-party deps, byte-identical to the verified-good set.
+python -m pip install -r requirements.lock
+
+# Install this repo's juniper_api package WITHOUT re-resolving deps,
+# so the locked versions are preserved.
+python -m pip install -e . --no-deps
+```
+
+**Alternative — flexible install (looser, resolves latest compatible):**
+
+```bash
+python -m pip install -e .                 # juniper_api + its deps
+python -m pip install -r requirements.txt  # the watcher's own deps (pinned)
+```
+
+Prefer `requirements.lock` for servers you want to be reproducible; use
+`requirements.txt` only if you intentionally want newer dependency versions.
+After any intentional dependency change, regenerate the lock:
+
+```bash
+python -m pip freeze | grep -v '^-e ' > requirements.lock
+```
+
 
 ### 4. Configure the watcher
 

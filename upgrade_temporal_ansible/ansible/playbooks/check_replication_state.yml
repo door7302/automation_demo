@@ -36,25 +36,46 @@
 
         - name: "{{ device_name }} | Poll task replication (every {{ poll_interval }}s, max {{ (poll_timeout / 60) | int }} min)"
           juniper.device.rpc:
+            # Local (in-process PyEZ) mode. Over the persistent pyez connection
+            # the module's get_rpc() path is broken with the installed
+            # ansible-core (returns no parsed_output / UnboundLocalError), which
+            # makes the until conditional crash. Local mode calls the RPC
+            # directly (same fix as the other check_* playbooks).
+            host: "{{ ansible_host | default(device_name) }}"
+            user: "{{ ansible_user }}"
+            passwd: "{{ ansible_password | default(omit) }}"
+            port: "{{ ansible_port | default(830) }}"
             rpcs: get-routing-task-replication-state
             formats: xml
+          vars:
+            ansible_connection: local
           register: taskrep
           until: >-
-            (( [taskrep.parsed_output['task-replication-state']['task-protocol-replication']]
-               if taskrep.parsed_output['task-replication-state']['task-protocol-replication'] is mapping
-               else taskrep.parsed_output['task-replication-state']['task-protocol-replication'] )
-             | rejectattr('task-protocol-replication-state', 'equalto', 'Complete')
-             | list | length) == 0
+            taskrep.parsed_output is defined
+            and (( [taskrep.parsed_output['task-replication-state']['task-protocol-replication']]
+                   if taskrep.parsed_output['task-replication-state']['task-protocol-replication'] is mapping
+                   else taskrep.parsed_output['task-replication-state']['task-protocol-replication'] )
+                 | rejectattr('task-protocol-replication-state', 'equalto', 'Complete')
+                 | list | length) == 0
           retries: "{{ poll_retries }}"
           delay: "{{ poll_interval }}"
 
         - name: "{{ device_name }} | Poll BGP replication (every {{ poll_interval }}s, max {{ (poll_timeout / 60) | int }} min)"
           juniper.device.rpc:
+            host: "{{ ansible_host | default(device_name) }}"
+            user: "{{ ansible_user }}"
+            passwd: "{{ ansible_password | default(omit) }}"
+            port: "{{ ansible_port | default(830) }}"
             rpcs: get-bgp-replication-information
             formats: xml
+          vars:
+            ansible_connection: local
           register: bgprep
           until: >-
-            bgprep.parsed_output['bgp-sync-information']['bgp-rsync-master']['bgp-rsync-rt-state'] == 'Complete'
+            (bgprep.parsed_output | default({}, true))
+              .get('bgp-sync-information', {})
+              .get('bgp-rsync-master', {})
+              .get('bgp-rsync-rt-state') == 'Complete'
           retries: "{{ poll_retries }}"
           delay: "{{ poll_interval }}"
 
@@ -73,7 +94,8 @@
                     if taskrep.parsed_output['task-replication-state']['task-protocol-replication'] is mapping
                     else taskrep.parsed_output['task-replication-state']['task-protocol-replication'] )
                   | rejectattr('task-protocol-replication-state', 'equalto', 'Complete')
-                  | map(attribute='task-protocol-replication-name') | list) }}
+                  | map(attribute='task-protocol-replication-name') | list)
+                 if taskrep.parsed_output is defined else ['unknown (no parseable RPC output)'] }}
             bgp_rt_state: >-
               {{ ((bgprep | default({})).parsed_output | default({}, true))
                   .get('bgp-sync-information', {})

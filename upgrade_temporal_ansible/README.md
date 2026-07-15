@@ -26,18 +26,54 @@ any file on the worker.
 
 ## Install
 
+> **Python version:** use **Python 3.10.x** (the verified-good dependency set
+> was built and tested on 3.10.12). The compiled deps (`lxml`, `cryptography`,
+> `ncclient`) ship version-specific wheels, so staying on 3.10.x is what
+> guarantees a clean install. Also make sure the **worker runs under this venv's
+> Python** — otherwise it may pick up a system-wide Ansible.
+
 From the repository root:
 
 ```bash
-cd  $PWD/upgrade_temporal_ansible
+cd $PWD/upgrade_temporal_ansible
 python3 -m venv .venv
-source .venv/bin/activate       
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+```
 
-# Temporal SDK + ansible-core
-python3 -m pip install -r requirements.txt
+**Recommended — reproducible install (exact pinned versions):**
 
-# Junos Ansible collection (PyEZ)
+```bash
+# Temporal SDK + ansible-core + Juniper PyEZ stack, byte-identical to the
+# verified-good set (temporalio, ansible-core, junos-eznc, ncclient, lxml,
+# looseversion, jxmlease, ...).
+python3 -m pip install -r requirements.lock
+
+# Junos Ansible collection (pinned to juniper.device == 1.0.7)
 ansible-galaxy collection install -r ansible/requirements.yml
+```
+
+**Alternative — flexible install (looser, resolves latest compatible):**
+
+```bash
+python3 -m pip install -r requirements.txt
+ansible-galaxy collection install -r ansible/requirements.yml
+```
+
+Prefer `requirements.lock` for servers you want to be reproducible; use
+`requirements.txt` only if you intentionally want newer dependency versions.
+After any intentional change, regenerate the lock:
+
+```bash
+python3 -m pip freeze > requirements.lock
+```
+
+Verify the environment before starting the worker:
+
+```bash
+which ansible-playbook    # must be .../.venv/bin/ansible-playbook
+python3 -c "import ncclient, jnpr.junos, jxmlease, yaml, lxml; from looseversion import LooseVersion; print('deps OK')"
+ansible-galaxy collection list | grep juniper.device   # must show 1.0.7
 ```
 
 ## Run it
@@ -53,8 +89,10 @@ docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-com
 docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-compose.https.yml up -d
 
 # 2. Start the worker
+#    Run it with the venv's interpreter so its `ansible-playbook` subprocess is
+#    the venv one (a system-wide Ansible would break the device modules).
 
-nohup python3 upgrade-wf/ansible_upgrade_workflow.py worker > worker.log 2>&1 &
+nohup .venv/bin/python3 upgrade-wf/ansible_upgrade_workflow.py worker > worker.log 2>&1 &
 ```
 
 > The worker resolves the playbooks at `ansible`
@@ -143,6 +181,8 @@ Connect to the GUI: `http(s)://<your-server>:8081
 | **Workflow Type** | `AnsibleUpgradeWorkflow` |
 
 Paste the input as a **single JSON object** — one argument. See [details](#input-fields). 
+
+![workflow input](images/workflow.png)
 
 > Do **not** wrap it in an array (`[ ... ]`): the workflow's `run` takes a single `UpgradeInput`, so a wrapping array is decoded as a `list` and fails with `Cannot convert to dataclass UpgradeInput, value is <class 'list'> not dict`. 
 
@@ -353,3 +393,6 @@ flowchart TD
     diff --> done([Return UpgradeReport])
     rb --> done
 ```
+
+## Screenshots 
+
