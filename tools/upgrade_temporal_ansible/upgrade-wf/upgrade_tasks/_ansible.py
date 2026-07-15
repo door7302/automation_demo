@@ -110,11 +110,17 @@ async def run_ansible_playbook(
     req: PlaybookRequest,
     heartbeat: Callable[[str], None],
     tail_lines: int = 60,
+    heartbeat_interval: float = 30.0,
 ) -> Tuple[int, str]:
     """Run one playbook as a subprocess, streaming output through ``heartbeat``.
 
     Returns ``(returncode, stdout_tail)``. Runs with cwd = the Ansible tool root
     so ``ansible.cfg`` (collections, callbacks) and relative paths resolve.
+
+    A background ticker also heartbeats every ``heartbeat_interval`` seconds so
+    the activity stays alive during long *silent* steps (e.g. the vmhost
+    install RPC blocks for minutes without emitting any output line). Without
+    it, the Temporal ``heartbeat_timeout`` fires mid-install.
     """
     import asyncio
     from collections import deque
@@ -143,13 +149,32 @@ async def run_ansible_playbook(
 
         tail: "deque[str]" = deque(maxlen=tail_lines)
         assert proc.stdout is not None
-        async for raw in proc.stdout:
-            line = raw.decode(errors="replace").rstrip("\n")
-            tail.append(line)
-            heartbeat(line)
 
-        rc = await proc.wait()
-        return rc, "\n".join(tail)
+        # Keep the last line seen so the background ticker can report progress
+        # context, and heartbeat periodically even when ansible is silent.
+        last_line = f"running {req.playbook}"
+
+        async def _ticker() -> None:
+            while True:
+                await asyncio.sleep(heartbeat_interval)
+                heartbeat(last_line)
+
+        ticker = asyncio.ensure_future(_ticker())
+        try:
+            async for raw in proc.stdout:
+                line = raw.decode(errors="replace").rstrip("\n")
+                last_line = line
+                tail.append(line)
+                heartbeat(line)
+
+            rc = await proc.wait()
+            return rc, "\n".join(tail)
+        finally:
+            ticker.cancel()
+            try:
+                await ticker
+            except (asyncio.CancelledError, Exception):
+                pass
     finally:
         try:
             os.remove(inv_path)

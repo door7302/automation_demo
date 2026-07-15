@@ -23,9 +23,9 @@ state_dir: "{{ playbook_dir | dirname }}/state"
 # --------------------------------------------------------------------------
 
 # Interfaces / BGP groups / routing-instances that must NEVER be touched.
-interface_whitelist: []
+interface_whitelist: ["lo0", "fxp0", "fxp1", "em0", "em1"]
 bgp_group_whitelist: []
-ri_whitelist: []
+ri_whitelist: ["mgmt_junos"]
 
 # ISIS overload options (all disabled by default).
 overload_advertise_high_metrics: false

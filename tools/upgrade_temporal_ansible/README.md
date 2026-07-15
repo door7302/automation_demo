@@ -1,11 +1,7 @@
 # Guided Junos upgrade — Temporal orchestrating Ansible playbooks
 
-This tool is a clone of [`tools/upgrade_auto`](../upgrade_auto/README.md) that
-reproduces the AWX **"Junos Guided Upgrade"** workflow (defined in
-[`tools/upgrade_ansible/provision_awx.yml`](../upgrade_ansible/provision_awx.yml))
-as a **Temporal** workflow — but instead of AWX job templates, each node runs
-one of the Ansible playbooks bundled with this tool under
-[`ansible/playbooks/`](ansible/playbooks/) via `ansible-playbook`.
+This tool reproduces a **"Junos Guided Upgrade"** workflow as a **Temporal.io** workflow —  each node runs
+one of the Ansible playbooks bundled with this tool under [`ansible/playbooks/`](ansible/playbooks/) via `ansible-playbook`.
 
 The **inventory** and **group-var** overrides are part of the Temporal JSON
 input, so an operator can drive an entire run from the Web UI without editing
