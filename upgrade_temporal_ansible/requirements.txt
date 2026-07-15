@@ -8,3 +8,9 @@ ansible-core>=2.16.6
 
 # The Junos playbooks use the juniper.device collection (PyEZ based). Install
 # it once with:  ansible-galaxy collection install -r ansible/requirements.yml
+#
+# The collection is Python-driven by Juniper PyEZ (junos-eznc), which provides
+# the NETCONF stack (ncclient). Without these the modules fail at runtime with
+# "ncclient module could not be imported."
+junos-eznc>=2.6.7
+ncclient>=0.6.13
