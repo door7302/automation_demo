@@ -61,6 +61,19 @@
 
     - name: Request reboot
       juniper.device.system:
+        # Run in local (in-process PyEZ) mode instead of over the persistent
+        # pyez connection. A reboot tears down the NETCONF session, and the
+        # persistent-connection path (ansible.module_utils.connection.__rpc__)
+        # calls Connection.close(raise_exceptions=...) on teardown — a kwarg
+        # the installed ansible-core no longer accepts, so the module raises
+        # "Connection.close() got an unexpected keyword argument
+        # 'raise_exceptions'" even though the reboot was dispatched. Local mode
+        # calls the RPC directly and avoids that teardown path (same approach
+        # as the software install task).
+        host: "{{ ansible_host | default(device_name) }}"
+        user: "{{ ansible_user }}"
+        passwd: "{{ ansible_password | default(omit) }}"
+        port: "{{ ansible_port | default(830) }}"
         action: reboot
         # all_re and other_re are mutually exclusive in the module: only ever
         # pass ONE of them. both -> all_re:true, local -> all_re:false,
@@ -70,6 +83,8 @@
         vmhost: "{{ vmhost }}"
         in_min: "{{ in_min | default(omit) }}"
         at: "{{ at | default(omit) }}"
+      vars:
+        ansible_connection: local
       register: reboot_result
 
     - name: Reboot result
