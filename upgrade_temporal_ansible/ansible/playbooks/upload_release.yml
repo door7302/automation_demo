@@ -95,6 +95,10 @@
         user: "{{ ansible_user }}"
         passwd: "{{ ansible_password | default(omit) }}"
         port: "{{ ansible_port | default(830) }}"
+        # Computing the MD5 of a multi-GB image on the RE takes minutes; the
+        # default 10s RPC timeout expires (silently here, due to failed_when)
+        # and makes the file look absent, forcing a needless re-upload.
+        timeout: "{{ checksum_timeout | default(600) }}"
         rpcs:
           - get-checksum-information
         kwargs:
@@ -136,6 +140,11 @@
         user: "{{ ansible_user }}"
         passwd: "{{ ansible_password | default(omit) }}"
         port: "{{ ansible_port | default(830) }}"
+        # file_copy internally computes the remote MD5
+        # (get-checksum-information) before/after the transfer; on a multi-GB
+        # image the default 10s RPC timeout expires with RpcTimeoutError. This
+        # also covers the long SCP transfer window (~30 min).
+        timeout: "{{ scp_timeout | default(1800) }}"
         action: put
         local_dir: "{{ local_repo }}"
         remote_dir: "{{ remote_dir }}"
@@ -150,6 +159,7 @@
         user: "{{ ansible_user }}"
         passwd: "{{ ansible_password | default(omit) }}"
         port: "{{ ansible_port | default(830) }}"
+        timeout: "{{ checksum_timeout | default(600) }}"
         rpcs:
           - get-checksum-information
         kwargs:
