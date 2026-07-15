@@ -30,7 +30,7 @@ From the repository root:
 
 ```bash
 cd  $PWD/upgrade_temporal_ansible
-python3- -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate       
 
 # Temporal SDK + ansible-core
@@ -40,7 +40,40 @@ python3 -m pip install -r requirements.txt
 ansible-galaxy collection install -r ansible/requirements.yml
 ```
 
-# Configuration 
+## Run it
+
+```bash
+# 1. Start Temporal (Web UI entry port is always 8081)
+
+# HTTP
+docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-compose.http.yml up -d
+
+# or HTTPS (generate a cert once: bash temporal_stack/certs/generate-certs.sh) 
+# or use your own key/certificate (rename them in server.key and server.crt)
+docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-compose.https.yml up -d
+
+# 2. Start the worker
+
+nohup python3 upgrade-wf/ansible_upgrade_workflow.py worker > worker.log 2>&1 &
+```
+
+> The worker resolves the playbooks at `ansible`
+> relative to this package. Override with the `UPGRADE_ANSIBLE_ROOT` env var or
+> the `playbooks_root` input field if the layout differs on the worker host.
+
+### Stopping
+
+```bash
+pkill -f ansible_upgrade_workflow.py
+
+# HTTP 
+docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-compose.http.yml down
+
+# HTTPs
+docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-compose.https.yml down
+```
+
+# Usage 
 
 Everything is done via the temporal.io UI you should pass as workflow input a JSON payload like this one: 
 
@@ -94,40 +127,6 @@ gres_nsr_knobs:
 ```
 
 Note, you could pass specific (per router) config via the temporal json input if needed. 
-
-## Run it
-
-```bash
-# 1. Start Temporal (Web UI entry port is always 8081)
-
-# HTTP
-docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-compose.http.yml up -d
-
-# or HTTPS (generate a cert once: bash temporal_stack/certs/generate-certs.sh) 
-# or use your own key/certificate (rename them in server.key and server.crt)
-docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-compose.https.yml up -d
-
-# 2. Start the worker
-
-nohup python3 upgrade-wf/ansible_upgrade_workflow.py worker \
-  > worker.log 2>&1 &
-```
-
-> The worker resolves the playbooks at `ansible`
-> relative to this package. Override with the `UPGRADE_ANSIBLE_ROOT` env var or
-> the `playbooks_root` input field if the layout differs on the worker host.
-
-### Stopping
-
-```bash
-pkill -f ansible_upgrade_workflow.py
-
-# HTTP 
-docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-compose.http.yml down
-
-# HTTPs
-docker compose -f temporal-stack/docker-compose.yml -f temporal-stack/docker-compose.https.yml down
-```
 
 ## Launching an upgrade
 
