@@ -10,5 +10,4 @@ show interfaces terse
 show bgp summary
 show route summary
 show isis adjacency
-show ospf neighbor
 show system alarms

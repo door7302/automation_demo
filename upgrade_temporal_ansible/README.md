@@ -294,14 +294,6 @@ workflow pauses until you send the empty `operator_continue` signal:
 
 - **Temporal Web UI** → open the running workflow → **Signals** → send
   `operator_continue` (no input).
-- **CLI**:
-
-  ```bash
-  python3 tools/upgrade_temporal_ansible/upgrade-wf/ansible_upgrade_workflow.py \
-    continue ansible-upgrade-rtme-mx-25
-  ```
-
-Query `current_step` to see which gate is active.
 
 ## Snapshot diffing
 

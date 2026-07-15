@@ -117,23 +117,27 @@ recreated.
 ```bash
 cd $PWD/commit_watcher
 
-docker compose -f tools/commit_watcher/docker-compose.yml up -d          # starts MongoDB on 127.0.0.1:27017
+docker compose -f docker-compose.yml up -d          # starts MongoDB on 127.0.0.1:27017
 docker compose ps             # verify it is running
 ```
 
-The database files now live in `tools/mongo-data/` on the host. To use a
+The database files now live in `mongo-data/` on the host. To use a
 different location, edit the `volumes:` mapping in `docker-compose.yml`
 (e.g. `- /srv/junos-commits/db:/data/db`).
 
 To stop / remove the container (the data on the host volume is kept):
 
 ```bash
-docker compose tools/commit_watcher/docker-compose.yml down
+cd $PWD/commit_watcher
+
+docker compose docker-compose.yml down
 ```
 
 #### Inspect the stored data
 
 ```bash
+cd $PWD/commit_watcher
+
 docker exec -it junos-commits-mongo mongosh junos_commits
 ```
 
@@ -154,7 +158,7 @@ From the **repository root**:
 
 ```bash
 cd $PWD/commit_watcher 
-python3- -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate           
 
 # Install juniper_api dependencies
@@ -233,7 +237,7 @@ devices:
 ### 5. Run the Watcher
 
 ```bash
-python syslog_commit_watcher.py --config config.yaml
+nohup python syslog_commit_watcher.py --config config.yaml > commit_watcher.log 2>&1 &
 ```
 
 Add `-v` for debug logging. Use `-m/--mode` to override `watcher.mode` from the
@@ -270,7 +274,7 @@ collection and lets you browse changes in the browser. It offers:
 #### Run it
 
 ```bash
-python webapp.py --config config.yaml
+nohup python webapp.py --config config.yaml > webapp.log 2>&1 &
 ```
 
 Then open <http(s)://<your-server>:8080>. The UI shares the `config.yaml` `mongodb`

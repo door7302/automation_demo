@@ -1,7 +1,7 @@
 """Ansible-driven upgrade tasks (Temporal activities).
 
 A single generic ``run_playbook`` activity executes the playbooks that live in
-the sibling ``tools/upgrade_ansible`` tool. Models are kept import-light so the
+the sibling ``upgrade_temporal_ansible`` tool. Models are kept import-light so the
 workflow can import them inside the Temporal sandbox.
 """
 

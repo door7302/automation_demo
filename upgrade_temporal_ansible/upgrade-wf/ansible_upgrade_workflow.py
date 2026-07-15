@@ -2,9 +2,9 @@
 Ansible-driven Device Upgrade Workflow — Temporal Python SDK
 ============================================================
 Re-implements the AWX "Junos Guided Upgrade" workflow (see
-``tools/upgrade_ansible/provision_awx.yml``) as a Temporal workflow, but
+``upgrade_ansible/provision_awx.yml``) as a Temporal workflow, but
 instead of AWX job templates each node runs one of the existing Ansible
-playbooks under ``tools/upgrade_ansible/playbooks/`` via ``ansible-playbook``.
+playbooks under ``upgrade_ansible/playbooks/`` via ``ansible-playbook``.
 
 Key ideas
 ---------
