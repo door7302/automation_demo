@@ -84,11 +84,21 @@
 
     - name: Confirm the image is present on the router
       juniper.device.rpc:
+        # Local (in-process PyEZ) mode. Over the persistent pyez connection the
+        # module's get_rpc() path is broken with the installed ansible-core and
+        # crashes with "UnboundLocalError: local variable 'resp' referenced
+        # before assignment" (same fix as the check_* / upload playbooks).
+        host: "{{ ansible_host | default(device_name) }}"
+        user: "{{ ansible_user }}"
+        passwd: "{{ ansible_password | default(omit) }}"
+        port: "{{ ansible_port | default(830) }}"
         rpcs:
           - file-list
         kwargs:
           path: "{{ remote_package }}"
         formats: xml
+      vars:
+        ansible_connection: local
       register: file_check
       failed_when: >-
         ('<file-name>' ~ remote_package ~ '</file-name>')
