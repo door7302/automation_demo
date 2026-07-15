@@ -6,9 +6,3 @@
 collections:
   - name: juniper.device
     version: "==1.0.7"
-  # Provides the `yaml` stdout callback referenced in ansible.cfg
-  # (stdout_callback = yaml). ansible-core bundles no collections, so on a
-  # fresh venv this must be installed explicitly or ansible aborts with
-  # "Invalid callback for stdout specified: yaml".
-  - name: community.general
-    version: ">=8.0.0"
