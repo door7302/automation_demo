@@ -38,12 +38,13 @@
                if fpc_info.parsed_output['fpc-information']['fpc'] is mapping
                else fpc_info.parsed_output['fpc-information']['fpc'] )
              | rejectattr('state', 'equalto', 'Empty')
-             | rejectattr('state', 'equalto', 'Online')
-             | list | length) == 0
-          retries: "{{ poll_retries }}"
-          delay: "{{ poll_interval }}"
-
-        - name: "{{ device_name }} | Result"
+            fpc_info.parsed_output is defined
+            and (( [fpc_info.parsed_output['fpc-information']['fpc']]
+                   if fpc_info.parsed_output['fpc-information']['fpc'] is mapping
+                   else fpc_info.parsed_output['fpc-information']['fpc'] )
+                 | rejectattr('state', 'equalto', 'Empty')
+                 | rejectattr('state', 'equalto', 'Online')
+            - name: "{{ device_name }} | Result"
           ansible.builtin.debug:
             msg: >-
               {{ device_name }} | all present FPCs are Online
@@ -68,7 +69,14 @@
 
         - name: "{{ device_name }} | Raise error - FPCs not Online after {{ poll_timeout }}s"
           ansible.builtin.fail:
+            msg: >-if fpc_info.parsed_output is defined else [] }}
+
+        - name: "{{ device_name }} | Raise error - FPCs not Online after {{ poll_timeout }}s"
+          ansible.builtin.fail:
             msg: >-
-              {{ device_name }} | FPC(s) NOT Online after {{ poll_timeout }}s (slot=state):
+              {{ device_name }} | FPC(s) NOT Online after {{ poll_timeout }}s:
               {{ dict(fpc_not_online | map(attribute='slot') | list
-                      | zip(fpc_not_online | map(attribute='state') | list)) }}
+                      | zip(fpc_not_online | map(attribute='state') | list))
+                 if (fpc_not_online | length > 0)
+                 else ('no parseable FPC output; last RPC result: '
+                       ~ (fpc_info.msg | default('unknown')

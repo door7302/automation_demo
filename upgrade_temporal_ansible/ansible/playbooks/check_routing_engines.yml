@@ -34,11 +34,12 @@
             formats: xml
           register: re_info
           until: >-
-            (( [re_info.parsed_output['route-engine-information']['route-engine']]
-               if re_info.parsed_output['route-engine-information']['route-engine'] is mapping
-               else re_info.parsed_output['route-engine-information']['route-engine'] )
-             | rejectattr('status', 'equalto', 'OK')
-             | list | length) == 0
+            re_info.parsed_output is defined
+            and (( [re_info.parsed_output['route-engine-information']['route-engine']]
+                   if re_info.parsed_output['route-engine-information']['route-engine'] is mapping
+                   else re_info.parsed_output['route-engine-information']['route-engine'] )
+                 | rejectattr('status', 'equalto', 'OK')
+                 | list | length) == 0
           retries: "{{ poll_retries }}"
           delay: "{{ poll_interval }}"
 
@@ -61,12 +62,15 @@
                     if re_info.parsed_output['route-engine-information']['route-engine'] is mapping
                     else re_info.parsed_output['route-engine-information']['route-engine'] )
                   | rejectattr('status', 'equalto', 'OK')
-                  | list) }}
+                  | list) if re_info.parsed_output is defined else [] }}
 
         - name: "{{ device_name }} | Raise error - Routing Engine(s) not OK after {{ (poll_timeout / 60) | int }} min"
           ansible.builtin.fail:
             msg: >-
               {{ device_name }} | Routing Engine(s) NOT OK after
-              {{ (poll_timeout / 60) | int }} min (slot=status):
+              {{ (poll_timeout / 60) | int }} min:
               {{ dict(re_not_ok | map(attribute='slot') | list
-                      | zip(re_not_ok | map(attribute='status') | list)) }}
+                      | zip(re_not_ok | map(attribute='status') | list))
+                 if (re_not_ok | length > 0)
+                 else ('no parseable RE output; last RPC result: '
+                       ~ (re_info.msg | default('unknown'))) }}
