@@ -2,13 +2,9 @@
 # ==========================================================================
 # check_fpc_online.yml
 # Wait for all present FPCs to reach the "Online" state, polling until a
-# deadline. Empty slots (state "Empty") are ignored. As soon as every present
-# FPC is Online the play succeeds; if one or more are still not Online after
-# the timeout, it raises an error listing the bad slots.
-#
-# FPCs come up well after the RE finishes booting, so after an upgrade/reboot
-# an FPC can sit in "Present" (detected, still initialising) for a few minutes
-# before it reaches "Online" — hence the generous default deadline below.
+# 30-second deadline. Empty slots (state "Empty") are ignored. As soon as
+# every present FPC is Online the play succeeds; if one or more are still
+# not Online after the timeout, it raises an error listing the bad slots.
 #
 #   "show chassis fpc"  (RPC get-fpc-information)
 #
@@ -17,7 +13,7 @@
 #
 # Tunables (override with -e):
 #   poll_interval : seconds between attempts (default 10)
-#   poll_timeout  : overall deadline in seconds (default 300)
+#   poll_timeout  : overall deadline in seconds (default 600)
 # ==========================================================================
 - name: Check all FPCs are Online
   hosts: "{{ target_hosts | default('junos_devices') }}"
@@ -38,13 +34,12 @@
             formats: xml
           register: fpc_info
           until: >-
-            fpc_info.parsed_output is defined
-            and (( [fpc_info.parsed_output['fpc-information']['fpc']]
-                   if fpc_info.parsed_output['fpc-information']['fpc'] is mapping
-                   else fpc_info.parsed_output['fpc-information']['fpc'] )
-                 | rejectattr('state', 'equalto', 'Empty')
-                 | rejectattr('state', 'equalto', 'Online')
-                 | list | length) == 0
+            (( [fpc_info.parsed_output['fpc-information']['fpc']]
+               if fpc_info.parsed_output['fpc-information']['fpc'] is mapping
+               else fpc_info.parsed_output['fpc-information']['fpc'] )
+             | rejectattr('state', 'equalto', 'Empty')
+             | rejectattr('state', 'equalto', 'Online')
+             | list | length) == 0
           retries: "{{ poll_retries }}"
           delay: "{{ poll_interval }}"
 
@@ -69,14 +64,11 @@
                     else fpc_info.parsed_output['fpc-information']['fpc'] )
                   | rejectattr('state', 'equalto', 'Empty')
                   | rejectattr('state', 'equalto', 'Online')
-                  | list) if fpc_info.parsed_output is defined else [] }}
+                  | list) }}
 
         - name: "{{ device_name }} | Raise error - FPCs not Online after {{ poll_timeout }}s"
           ansible.builtin.fail:
             msg: >-
-              {{ device_name }} | FPC(s) NOT Online after {{ poll_timeout }}s:
+              {{ device_name }} | FPC(s) NOT Online after {{ poll_timeout }}s (slot=state):
               {{ dict(fpc_not_online | map(attribute='slot') | list
-                      | zip(fpc_not_online | map(attribute='state') | list))
-                 if (fpc_not_online | length > 0)
-                 else ('no parseable FPC output; last RPC result: '
-                       ~ (fpc_info.msg | default('unknown'))) }}
+                      | zip(fpc_not_online | map(attribute='state') | list)) }}
