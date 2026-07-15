@@ -3,3 +3,6 @@ juniper_api/__pycache__/**
 **/pkg/*.tgz
 mykey.txt
 docs/**
+old/**
+.DS_Store
+**/.DS_Store

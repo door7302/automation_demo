@@ -1,0 +1,144 @@
+---
+# ==========================================================================
+# reboot.yml
+# Reboot a Junos / Junos-Evolved device, or a specific Routing Engine.
+#
+# Uses juniper.device.system (action: reboot). RE targeting:
+#   re_target: both   -> reboot ALL REs            (all_re: true)   [default]
+#              local  -> reboot only the RE this play is connected to
+#                                                   (all_re: false, other_re: false)
+#              other  -> reboot only the OTHER RE  (other_re: true)
+#
+# vmhost reboot (request vmhost reboot):
+#   By default this is AUTO-DETECTED from the release image name: if
+#   release_file contains "vmhost", a vmhost reboot is performed (needed on
+#   vmhost-based REs to reboot the host OS as well). Force it on/off with
+#   -e vmhost=true / -e vmhost=false.
+#
+# Optional scheduling:
+#   in_min : reboot in N minutes
+#   at     : reboot at a specific time ("hh:mm" or "yyyymmddhhmm")
+#
+# Reboot verification:
+#   For an immediate reboot the module lowers its RPC timeout to 5s and, if the
+#   RE is busy (e.g. right after a software install), can report "reboot may not
+#   have been initiated" even though the reboot was dispatched. When that
+#   ambiguous verdict is returned we confirm the real outcome by waiting for the
+#   device to stop answering on NETCONF (state: stopped). Tune the wait with
+#   -e reboot_down_timeout=<seconds> (default 180). A genuine dispatch error
+#   still fails the play.
+#
+# Examples:
+#   ansible-playbook playbooks/reboot.yml --limit router1
+#   ansible-playbook playbooks/reboot.yml --limit router1 -e re_target=other
+#   ansible-playbook playbooks/reboot.yml --limit router1 -e re_target=local
+#   ansible-playbook playbooks/reboot.yml --limit router1 -e vmhost=true
+#   ansible-playbook playbooks/reboot.yml --limit router1 -e in_min=5
+# ==========================================================================
+- name: Reboot device or a given Routing Engine
+  hosts: "{{ target_hosts | default('junos_devices') }}"
+  connection: juniper.device.pyez
+  gather_facts: false
+  vars:
+    re_target: both
+    # Default to a vmhost reboot when the staged image is a vmhost image
+    # (auto-detected from the release filename). Override with -e vmhost=...
+    vmhost: "{{ 'vmhost' in (release_file | default('') | lower) }}"
+    # in_min / at are intentionally left undefined by default.
+    reboot_all_re: "{{ re_target == 'both' }}"
+    reboot_other_re: "{{ re_target == 'other' }}"
+  tasks:
+
+    - name: Validate re_target
+      ansible.builtin.assert:
+        that:
+          - re_target in ['both', 'local', 'other']
+        fail_msg: "re_target must be one of: both | local | other (got '{{ re_target }}')"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Reboot plan
+      ansible.builtin.debug:
+        msg:
+          - "device   : {{ device_name }}"
+          - "platform  : {{ 'EVO' if (software | default('junos')) | lower == 'evo' else 'Junos' }}"
+          - "target    : {{ re_target }} (all_re={{ reboot_all_re }}, other_re={{ reboot_other_re }})"
+          - "vmhost    : {{ vmhost }}"
+          - "when      : {{ ('in ' ~ in_min ~ ' min') if in_min is defined else (('at ' ~ at) if at is defined else 'now') }}"
+
+    - name: Request reboot
+      juniper.device.system:
+        # Run in local (in-process PyEZ) mode instead of over the persistent
+        # pyez connection. A reboot tears down the NETCONF session, and the
+        # persistent-connection path (ansible.module_utils.connection.__rpc__)
+        # calls Connection.close(raise_exceptions=...) on teardown — a kwarg
+        # the installed ansible-core no longer accepts, so the module raises
+        # "Connection.close() got an unexpected keyword argument
+        # 'raise_exceptions'" even though the reboot was dispatched. Local mode
+        # calls the RPC directly and avoids that teardown path (same approach
+        # as the software install task).
+        host: "{{ ansible_host | default(device_name) }}"
+        user: "{{ ansible_user }}"
+        passwd: "{{ ansible_password | default(omit) }}"
+        port: "{{ ansible_port | default(830) }}"
+        action: reboot
+        # all_re and other_re are mutually exclusive in the module: only ever
+        # pass ONE of them. both -> all_re:true, local -> all_re:false,
+        # other -> other_re:true (all_re omitted).
+        all_re: "{{ reboot_all_re if re_target != 'other' else omit }}"
+        other_re: "{{ true if re_target == 'other' else omit }}"
+        vmhost: "{{ vmhost }}"
+        in_min: "{{ in_min | default(omit) }}"
+        at: "{{ at | default(omit) }}"
+      vars:
+        ansible_connection: local
+      register: reboot_result
+      # For an immediate reboot the module forces the PyEZ RPC timeout down to
+      # 5 seconds. If the RE is busy (e.g. right after a software install) the
+      # vmhost-reboot confirmation can take longer than that: the RPC times out,
+      # the follow-up close() still succeeds because NETCONF has not torn down
+      # yet, and the module then reports
+      #   "reboot failed. reboot may not have been initiated."
+      # even though the reboot WAS dispatched. Never let that ambiguous verdict
+      # fail the play on its own — we confirm the real outcome below by probing
+      # reachability. (A genuine dispatch error is still failed hard.)
+      failed_when: false
+
+    - name: Classify reboot outcome
+      vars:
+        _reboot_msg: "{{ reboot_result.msg | default('') }}"
+      ansible.builtin.set_fact:
+        # The module confirmed the reboot itself.
+        reboot_confirmed: >-
+          {{ ('successfully initiated' in _reboot_msg)
+             or ('succeeded' in _reboot_msg) }}
+        # The 5s-timeout false-negative described above: dispatched but not
+        # confirmed. Resolve it by checking the device actually goes down.
+        reboot_ambiguous: "{{ 'may not have been' in _reboot_msg }}"
+
+    - name: Fail on a genuine reboot error
+      ansible.builtin.fail:
+        msg: "{{ device_name }} | reboot request errored: {{ reboot_result.msg | default('unknown error') }}"
+      when:
+        - not (reboot_confirmed | bool)
+        - not (reboot_ambiguous | bool)
+
+    - name: Verify the device is actually rebooting (NETCONF stops responding)
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host | default(device_name) }}"
+        port: "{{ ansible_port | default(830) }}"
+        state: stopped
+        timeout: "{{ reboot_down_timeout | default(180) }}"
+      delegate_to: localhost
+      when:
+        - not (reboot_confirmed | bool)
+        - reboot_ambiguous | bool
+
+    - name: Reboot result
+      ansible.builtin.debug:
+        msg: >-
+          {{ device_name }} |
+          {{ 'reboot confirmed by device'
+             if (reboot_confirmed | bool)
+             else 'reboot verified — device stopped responding on NETCONF (initiation confirmed)' }}
+          | {{ reboot_result.msg | default('reboot requested') }}

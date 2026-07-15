@@ -1,2 +1,0 @@
-junos-eznc>=2.7.0
-lxml>=4.6.0

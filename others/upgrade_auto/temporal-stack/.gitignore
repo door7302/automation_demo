@@ -1,3 +1,0 @@
-# Do not commit generated self-signed certificates
-certs/*.crt
-certs/*.key
