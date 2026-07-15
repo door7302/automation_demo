@@ -87,11 +87,21 @@
 
     - name: Compute MD5 of the file already on the router (if any)
       juniper.device.rpc:
+        # Local (in-process PyEZ) mode. Over the persistent pyez connection the
+        # RPC returns nothing on this ansible-core (same bug the check_*
+        # playbooks hit), which made this checksum come back empty and forced
+        # a needless re-upload. Local mode calls the RPC directly.
+        host: "{{ ansible_host | default(device_name) }}"
+        user: "{{ ansible_user }}"
+        passwd: "{{ ansible_password | default(omit) }}"
+        port: "{{ ansible_port | default(830) }}"
         rpcs:
           - get-checksum-information
         kwargs:
           path: "{{ remote_path }}"
         formats: xml
+      vars:
+        ansible_connection: local
       register: remote_cksum
       failed_when: false
 
@@ -118,21 +128,35 @@
 
     - name: Upload the release image via SCP
       juniper.device.file_copy:
-        protocol: scp
+        # Local (in-process PyEZ) mode; SCP is this module's transport. The
+        # `protocol` and `checksum` options are NOT supported by this
+        # collection version (1.0.7) — integrity is instead verified by the
+        # explicit get-checksum-information comparison below.
+        host: "{{ ansible_host | default(device_name) }}"
+        user: "{{ ansible_user }}"
+        passwd: "{{ ansible_password | default(omit) }}"
+        port: "{{ ansible_port | default(830) }}"
         action: put
         local_dir: "{{ local_repo }}"
         remote_dir: "{{ remote_dir }}"
         file: "{{ release_file }}"
-        checksum: true
+      vars:
+        ansible_connection: local
       when: need_upload | bool
 
     - name: Recompute MD5 on the router after upload
       juniper.device.rpc:
+        host: "{{ ansible_host | default(device_name) }}"
+        user: "{{ ansible_user }}"
+        passwd: "{{ ansible_password | default(omit) }}"
+        port: "{{ ansible_port | default(830) }}"
         rpcs:
           - get-checksum-information
         kwargs:
           path: "{{ remote_path }}"
         formats: xml
+      vars:
+        ansible_connection: local
       register: post_cksum
       when: need_upload | bool
 
