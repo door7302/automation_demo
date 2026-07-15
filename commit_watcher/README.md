@@ -64,7 +64,7 @@ docker compose -f docker-compose.yml up -d
 
 source .venv/bin/activate 
 nohup python syslog_commit_watcher.py --config config.yaml > commit_watcher.log 2>&1 &
-nohup webapp.py --config config.yaml > webapp.log 2>&1 &
+nohup python webapp.py --config config.yaml > webapp.log 2>&1 &
 ```
 
 To stop everything: 
