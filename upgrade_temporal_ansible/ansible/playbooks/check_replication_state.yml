@@ -78,6 +78,12 @@
           vars:
             ansible_connection: local
           register: bgprep
+          # Only check BGP replication when stateful (GRES/NSR) replication is
+          # enabled. When NSR is not configured, stateful replication is
+          # Disabled and BGP synchronization never leaves 'NotStarted', so
+          # polling it would always time out.
+          when: >-
+            taskrep.parsed_output.get('task-replication-state', {}).get('task-gres-state') != 'Disabled'
           # Passes when BGP is not running (no bgp-sync-information block) or
           # when the master RT sync state is 'Complete'.
           until: >-
@@ -96,7 +102,7 @@
             msg: >-
               {{ device_name }} | replication OK
               (gres={{ taskrep.parsed_output.get('task-replication-state', {}).get('task-gres-state', 'n/a') }},
-              bgp-rsync-rt-state={{ bgprep.parsed_output.get('bgp-sync-information', {}).get('bgp-rsync-master', {}).get('bgp-rsync-rt-state', 'n/a (BGP not running)') }})
+              bgp-rsync-rt-state={{ ((bgprep | default({})).parsed_output | default({}, true)).get('bgp-sync-information', {}).get('bgp-rsync-master', {}).get('bgp-rsync-rt-state', 'n/a (stateful replication disabled or BGP not running)') }})
 
       rescue:
 
