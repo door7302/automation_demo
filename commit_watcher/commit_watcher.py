@@ -403,6 +403,10 @@ class GnmiWatcher:
                     password=self._config.gnmi_passwd,
                     insecure=self._config.gnmi_insecure,
                     skip_verify=self._config.gnmi_skip_verify,
+                    # Junos does not implement the gNMI QoS marking field and
+                    # rejects the subscription with "Qos not supported"; disable
+                    # the marking pygnmi otherwise sends by default.
+                    no_qos_marking=True,
                 ) as client:
                     for response in client.subscribe2(subscribe=subscribe):
                         if self._stop.is_set():

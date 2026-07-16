@@ -223,11 +223,13 @@ comments in `config.example.yaml`.
 Sample Config:
 
 ```shell 
-# Configuration for commit_watcher.py
+# Configuration for syslog_commit_watcher.py
 #
 # Copy this file to `config.yaml` and adjust the values.
 # Every value can also be overridden with an environment variable
 # (shown in [brackets] below).
+watcher:
+  mode: both
 
 syslog:
   host: 0.0.0.0        # [SYSLOG_HOST] interface to bind the UDP listener to
@@ -238,6 +240,17 @@ mongodb:
   database: junos_commits          # [MONGODB_DB]
   collection: commit_diffs         # [MONGODB_COLLECTION]
 
+gnmi:
+  port: 9339           # [GNMI_PORT] gNMI TCP port on the routers
+  user: CHANGEME       # [GNMI_USER]
+  passwd: CHANGEME     # [GNMI_PASSWD]
+  insecure: true       # [GNMI_INSECURE] true = plaintext (no TLS)
+  skip_verify: true    # [GNMI_SKIP_VERIFY] skip TLS certificate validation
+  reconnect_delay: 10  # [GNMI_RECONNECT_DELAY] seconds before re-subscribing
+  routers:
+    - name: rtme-ptx10001-36mr-10  # label stored as `source` in MongoDB
+      hostname: rtme-ptx10001-36mr-10.englab.juniper.net    # address used for the gNMI + NETCONF sessions
+    
 # Web UI served by webapp.py.
 web:
   host: 0.0.0.0        # [WEB_HOST] interface to bind the HTTP(S) server to
@@ -245,7 +258,7 @@ web:
   ssl:
     enabled: true     # [WEB_SSL_ENABLED] serve over HTTPS when true
     certfile: certs/server.crt          # [WEB_SSL_CERTFILE] path to the TLS certificate (PEM)
-    keyfile: certs/server.key           # [WEB_SSL_KEYFILE] path to the TLS private key (PEM)
+    keyfile: certs/server.key          # [WEB_SSL_KEYFILE] path to the TLS private key (PEM)
 
 devices:
   # Connect to the packet source IP by default. Set to true to instead
@@ -254,8 +267,8 @@ devices:
 
   # Credentials/params applied to every device (forwarded to JuniperDevice).
   defaults:
-    user: xxxxx
-    passwd: xxxxx
+    user: CHANGEME
+    passwd: CHANGEME
     port: 830
     timeout: 30
 ```
