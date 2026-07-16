@@ -22,7 +22,7 @@ Common flow (regardless of back-end)
 4. Store a JSON document ``{source, date, diff, model, version}`` in MongoDB,
    ready to be rendered later as a per-router timeline.
 
-Run ``python syslog_commit_watcher.py --help`` for usage.
+Run ``python commit_watcher.py --help`` for usage.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from juniper_api import JuniperDevice, JuniperDeviceError
 
-LOG = logging.getLogger("syslog_commit_watcher")
+LOG = logging.getLogger("commit_watcher")
 
 # Marker Junos writes to syslog when a commit finishes successfully.
 COMMIT_MARKER = "UI_COMMIT_COMPLETED"

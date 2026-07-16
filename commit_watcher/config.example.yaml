@@ -1,4 +1,4 @@
-# Configuration for syslog_commit_watcher.py
+# Configuration for commit_watcher.py
 #
 # Copy this file to `config.yaml` and adjust the values.
 # Every value can also be overridden with an environment variable

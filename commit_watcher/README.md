@@ -63,7 +63,7 @@ cd $PWD/commit_watcher
 docker compose -f docker-compose.yml up -d  
 
 source .venv/bin/activate 
-nohup python syslog_commit_watcher.py --config config.yaml > commit_watcher.log 2>&1 &
+nohup python commit_watcher.py --config config.yaml > commit_watcher.log 2>&1 &
 nohup python webapp.py --config config.yaml > webapp.log 2>&1 &
 ```
 
@@ -73,7 +73,7 @@ To stop everything:
 cd $PWD/commit_watcher
 docker compose -f docker-compose.yml down
 
-ps aux | grep syslog_commit_watcher.py
+ps aux | grep commit_watcher.py
 kill <pid>
 
 ps aux | grep webapp.py
@@ -223,7 +223,7 @@ comments in `config.example.yaml`.
 Sample Config:
 
 ```shell 
-# Configuration for syslog_commit_watcher.py
+# Configuration for commit_watcher.py
 #
 # Copy this file to `config.yaml` and adjust the values.
 # Every value can also be overridden with an environment variable
@@ -263,7 +263,7 @@ devices:
 ### 5. Run the Watcher
 
 ```bash
-nohup python syslog_commit_watcher.py --config config.yaml > commit_watcher.log 2>&1 &
+nohup python commit_watcher.py --config config.yaml > commit_watcher.log 2>&1 &
 ```
 
 Add `-v` for debug logging. Use `-m/--mode` to override `watcher.mode` from the
