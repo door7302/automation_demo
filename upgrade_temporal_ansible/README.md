@@ -9,6 +9,12 @@ any file on the worker.
 
 ![archi](images/archi.png)
 
+## Video of the demo
+
+Click here for a demo: 
+
+[![](images/demo.png)](https://youtu.be/bp7xcJSLIDc)
+
 ## How it works
 
 - **Temporal server** — runs in Docker (PostgreSQL + Temporal + Web UI). It

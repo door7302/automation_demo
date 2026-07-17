@@ -13,6 +13,12 @@ Commits can be detected two ways (`watcher.mode` in the config):
 
 ![archi](images/archi.png)
 
+## Video of the demo
+
+Click here for a demo: 
+
+[![](images/demo.png)](https://youtu.be/M0HSwTpGUZM)
+
 ## How it works
 
 ```mermaid
