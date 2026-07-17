@@ -396,3 +396,6 @@ flowchart TD
 
 ## Screenshots 
 
+Full upgrade Temporal timeline:
+
+![timeline](images/timeline.png)
