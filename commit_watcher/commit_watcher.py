@@ -51,6 +51,7 @@ COMMIT_MARKER = "UI_COMMIT_COMPLETED"
 # message text streamed on that path when a commit has finished.
 GNMI_COMMIT_PATH = "/junos/events/event[id=UI_COMMIT_PROGRESS]"
 GNMI_COMMIT_MARKER = "commit complete"
+GNMI_COMMIT_INPROGRESS = "operation in progress"
 
 # RFC 3164 (BSD) syslog: "<PRI>Mon DD HH:MM:SS hostname tag: message".
 # The year is not part of the timestamp, so the current year is assumed.
@@ -434,6 +435,8 @@ class GnmiWatcher:
             if not isinstance(value, str):
                 continue
             if GNMI_COMMIT_MARKER not in value.lower():
+                continue
+            if GNMI_COMMIT_INPROGRESS in value.lower():
                 continue
             LOG.info(
                 "gNMI: commit complete on %s (%s): %s",
